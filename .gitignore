@@ -1,0 +1,13 @@
+# Rust build artifacts
+/target/
+
+# Nix/direnv local environment
+/.direnv/
+
+# Local secrets and machine-specific config
+/.env
+/.env.*
+/*.local.toml
+
+# Runtime and debug output
+/*.log

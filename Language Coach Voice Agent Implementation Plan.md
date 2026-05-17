@@ -837,7 +837,7 @@ Support both local and deployed servers:
 
 ```bash
 cargo run -p language-coach-debug-client -- --config config/debug-client.local.toml
-cargo run -p language-coach-debug-client -- --url wss://language-coach.brentdgeorge.com/dev/connect
+cargo run -p language-coach-debug-client -- --config config/debug-client.local.toml --url wss://language-coach.brentdgeorge.com/dev/connect
 ```
 
 The client sends token auth through WebSocket subprotocol by default and can optionally use `Authorization: Bearer` for non-browser-compatible clients/tools.

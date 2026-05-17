@@ -1,0 +1,7 @@
+server_url = "ws://127.0.0.1:8080/dev/connect"
+input = "microphone"
+output = "speaker"
+
+[audio]
+sample_rate = 8000
+encoding = "pcmu"
