@@ -92,6 +92,7 @@ pub(crate) async fn telnyx_webhook(
 
     let outcome = match &webhook.data.event_type {
         WebhookEventType::CallInitiated => handle_call_initiated(&state, &webhook).await,
+        WebhookEventType::CallAnswered => WebhookOutcome::Processed,
         WebhookEventType::CallHangup => handle_call_hangup(&state, &webhook).await,
         WebhookEventType::Other(_) => {
             error!(event_id = %webhook.data.id, event_type = %webhook.data.event_type, "unknown telnyx webhook event type");
@@ -187,10 +188,7 @@ async fn handle_call_initiated(state: &AppState, webhook: &TelnyxWebhook) -> Web
         },
     );
 
-    let stream_url = format!(
-        "{}/telnyx/media?call_token={token}",
-        state.config.public_base_url.trim_end_matches('/')
-    );
+    let stream_url = media_stream_url(&state.config.public_base_url, &token);
     let answer_result = answer_call(
         &state.http_client,
         &state.config.telnyx,
@@ -222,6 +220,13 @@ async fn handle_call_initiated(state: &AppState, webhook: &TelnyxWebhook) -> Web
             WebhookOutcome::Retry
         }
     }
+}
+
+fn media_stream_url(public_base_url: &str, token: &str) -> String {
+    let websocket_base_url = public_base_url
+        .trim_end_matches('/')
+        .replacen("https://", "wss://", 1);
+    format!("{websocket_base_url}/telnyx/media?call_token={token}")
 }
 
 async fn reject_non_allowlisted_call(
@@ -413,6 +418,16 @@ mod tests {
             1
         );
         api_task.abort();
+    }
+
+    #[test]
+    fn media_stream_url_uses_websocket_scheme() {
+        let url = super::media_stream_url("https://language-coach.example.com/", "token-1");
+
+        assert_eq!(
+            url,
+            "wss://language-coach.example.com/telnyx/media?call_token=token-1"
+        );
     }
 
     #[tokio::test]

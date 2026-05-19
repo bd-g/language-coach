@@ -115,6 +115,8 @@ pub struct WebhookData {
 pub enum WebhookEventType {
     /// A new inbound or outbound call was initiated.
     CallInitiated,
+    /// A call was answered.
+    CallAnswered,
     /// A call was hung up.
     CallHangup,
     /// Event type not yet modeled by this service.
@@ -127,6 +129,7 @@ impl WebhookEventType {
     pub fn as_str(&self) -> &str {
         match self {
             Self::CallInitiated => "call.initiated",
+            Self::CallAnswered => "call.answered",
             Self::CallHangup => "call.hangup",
             Self::Other(value) => value,
         }
@@ -145,6 +148,7 @@ impl FromStr for WebhookEventType {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         Ok(match value {
             "call.initiated" => Self::CallInitiated,
+            "call.answered" => Self::CallAnswered,
             "call.hangup" => Self::CallHangup,
             other => Self::Other(other.to_owned()),
         })

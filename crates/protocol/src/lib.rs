@@ -74,6 +74,20 @@ mod tests {
     }
 
     #[test]
+    fn parses_telnyx_answered_webhook() {
+        let input = r#"{"data":{"id":"event-2","event_type":"call.answered","payload":{"call_control_id":"call-1","from":"+15551234567"}}}"#;
+        let parsed: Result<telnyx::Webhook, _> = serde_json::from_str(input);
+        assert!(parsed.is_ok());
+        let Ok(parsed) = parsed else {
+            return;
+        };
+        assert_eq!(
+            parsed.data.event_type,
+            telnyx::WebhookEventType::CallAnswered
+        );
+    }
+
+    #[test]
     fn builds_media_frame_roundtrip() {
         let source = vec![0u8, 1, 2, 3, 4, 5, 6, 7];
         let text = telnyx::build_media_message(&source);
