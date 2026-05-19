@@ -65,3 +65,7 @@ cargo run -p language-coach-debug-client -- \
   --config debug-client.local.toml \
   --url wss://language-coach.brentdgeorge.com/dev/connect
 ```
+
+## Production Setup
+
+See `docs/production-setup.md` for concise Fly.io, Telnyx, secret, and redeploy instructions.
