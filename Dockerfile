@@ -1,16 +1,18 @@
-FROM rust:1-bookworm AS builder
+FROM rust:1-alpine AS builder
+
+RUN apk add --no-cache build-base ca-certificates perl
 
 WORKDIR /workspace
 COPY . .
-RUN cargo build --release -p language-coach-server
+RUN cargo build --release -p language-coach-server --target x86_64-unknown-linux-musl \
+    && strip /workspace/target/x86_64-unknown-linux-musl/release/language-coach-server
 
-FROM debian:bookworm-slim
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+FROM scratch
 
 WORKDIR /app
-COPY --from=builder /workspace/target/release/language-coach-server /usr/local/bin/language-coach-server
+COPY --from=builder /workspace/target/x86_64-unknown-linux-musl/release/language-coach-server /usr/local/bin/language-coach-server
 
-CMD ["/usr/local/bin/language-coach-server", "--config", "/app/config/production.toml"]
+USER 65532:65532
+
+ENTRYPOINT ["/usr/local/bin/language-coach-server"]
+CMD ["--config", "/app/config/production.toml"]
