@@ -4,6 +4,8 @@
 [session]
 max_duration_seconds = 1800
 time_limit_message = "Ya llegamos al límite de tiempo de esta sesión. ¡Muy buen trabajo hoy! Hasta la próxima."
+# Spoken before ending when the speech-to-text or LLM provider fails.
+failure_message = "Lo siento, algo salió mal. Sorry, something went wrong. Por favor intenta de nuevo más tarde."
 
 [stt]
 model = "flux-general-multi"
@@ -24,9 +26,9 @@ model = "gpt-4.1"
 [tts]
 provider = "cartesia"
 model = "sonic-3.6"
-# Daniela - Relaxed Woman (Mexican Spanish).
-voice = "5c5ad5e7-1020-476b-8b91-fdcbe9cc313c"
-# Multilingual alternative: Skylar, native en-US with a native es-MX accent
-# (example voice in Cartesia's Get Voice API reference).
-# voice = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
+# Skylar - Friendly Guide: multilingual, native en-US with an es-MX accent.
+voice = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
+# Single-accent alternative, native Mexican Spanish (English will sound accented):
+# Fernanda - Friendly Guide
+# voice = "b4b8e2af-6139-466e-a93a-30c20d2e1fc5"
 language = "es-MX"

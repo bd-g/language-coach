@@ -16,6 +16,7 @@ language_coach/
   origin.py               runner arguments → PhoneCall | DailyRoomSession | WebRtcSession
   admission.py            allowlist decision for phone calls
   session.py              reject unknown callers, or run the coaching pipeline
+  failures.py             when a failing provider should end the session
   tools.py                set_speaking_rate and end_call tools
   tts.py                  TTS provider construction and speed mapping
   usage.py                per-session TTS character and LLM token totals

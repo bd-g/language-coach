@@ -23,6 +23,7 @@ MINIMAL_TOML = """
 [session]
 max_duration_seconds = 60
 time_limit_message = "Se acabó el tiempo."
+failure_message = "Algo salió mal."
 
 [stt]
 model = "flux-general-multi"

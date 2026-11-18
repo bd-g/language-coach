@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from loguru import logger
 from pipecat.audio.filters.base_audio_filter import BaseAudioFilter
-from pipecat.frames.frames import EndFrame, TTSSpeakFrame
+from pipecat.frames.frames import EndFrame, ErrorFrame, TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker
 from pipecat.processors.aggregators.llm_context import LLMContext
@@ -21,6 +21,7 @@ from pipecat.workers.runner import WorkerRunner
 
 from language_coach.admission import rejection_reason
 from language_coach.config import AppConfig, Runtime, SessionConfig
+from language_coach.failures import Provider, ProviderFailureMonitor
 from language_coach.origin import (
     DailyRoomSession,
     PhoneCall,
@@ -35,6 +36,8 @@ from language_coach.usage import UsageObserver
 BOT_NAME = "Language Coach"
 PHONE_SAMPLE_RATE = 8000
 REJECT_TIMEOUT_SECONDS = 15.0
+PROVIDER_MAX_ERRORS = 3
+PROVIDER_ERROR_WINDOW_SECONDS = 30.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +154,16 @@ async def _coach(origin: SessionOrigin, handle_sigint: bool, config: AppConfig) 
         logger.info("client disconnected")
         await runner.cancel(reason="client disconnected")
 
+    end_on_provider_failure(
+        worker,
+        ProviderFailureMonitor(
+            {stt: Provider.STT, llm: Provider.LLM, tts: Provider.TTS},
+            max_errors=PROVIDER_MAX_ERRORS,
+            window_seconds=PROVIDER_ERROR_WINDOW_SECONDS,
+        ),
+        bot.session,
+    )
+
     if isinstance(transport, DailyTransport):
 
         @transport.event_handler("on_dialin_error")
@@ -171,6 +184,32 @@ async def _coach(origin: SessionOrigin, handle_sigint: bool, config: AppConfig) 
             f"llm_prompt_tokens={summary.llm_prompt_tokens} "
             f"llm_completion_tokens={summary.llm_completion_tokens}"
         )
+
+
+def end_on_provider_failure(
+    worker: PipelineWorker, failures: ProviderFailureMonitor, session: SessionConfig
+) -> None:
+    """End the session gracefully when `failures` says a provider has failed.
+
+    The learner hears `failure_message` first unless the TTS provider is the one that failed.
+    """
+
+    @worker.event_handler("on_pipeline_error")
+    async def _provider_error(_worker: PipelineWorker, frame: ErrorFrame) -> None:
+        processor = frame.processor
+        usable = processor.is_usable if processor is not None else True
+        provider = failures.record(processor, usable=usable)
+        if provider is None:
+            return
+        logger.error(f"ending session: {provider} provider failed")
+        reason = f"{provider} failed"
+        match provider:
+            case Provider.TTS:
+                await worker.queue_frames([EndFrame(reason=reason)])
+            case Provider.STT | Provider.LLM:
+                await worker.queue_frames(
+                    [TTSSpeakFrame(session.failure_message), EndFrame(reason=reason)]
+                )
 
 
 async def _enforce_time_limit(worker: PipelineWorker, session: SessionConfig) -> None:

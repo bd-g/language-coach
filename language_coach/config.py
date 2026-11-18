@@ -37,6 +37,7 @@ class SessionConfig(_Strict):
 
     max_duration_seconds: PositiveInt
     time_limit_message: str = Field(min_length=1)
+    failure_message: str = Field(min_length=1)
 
 
 class SttConfig(_Strict):

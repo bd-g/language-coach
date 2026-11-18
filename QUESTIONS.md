@@ -2,7 +2,7 @@
 
 ## Open
 
-1. **Voice evaluation.** We are testing Cartesia "Daniela" (Mexican Spanish, `es-MX`) first. If English role-play sounds accented, switch `voice` in `config/bot.toml` to the commented Skylar voice (native `en-US` plus native `es-MX` accent). If neither works, build the per-sentence (or per-phrase) language switching processor, which detects each sentence's language and pushes a `TTSUpdateSettingsFrame` with the matching locale. How does Daniela sound on a real call?
+1. **Voice evaluation.** The earlier "Daniela" voice ID does not exist in Cartesia's library. No Cartesia voice is natively Mexican and also native in `en-US`. We are testing Skylar (multilingual: native `en-US` plus an `es-MX` accent) with `language = "es-MX"`. Fernanda (native Mexican only) is commented in `config/bot.toml`. If neither works, build the per-sentence language switching processor, so Skylar can speak English sentences with `en-US` and Spanish with `es-MX`. How does Skylar sound?
 2. **Rejected-call billing.** Unknown callers are connected and then disconnected immediately, without any STT, LLM, or TTS services being created. Daily's docs don't say whether pinless hold time is billed. Please check the first invoice line items after a test from a non-allowlisted number to confirm this is the cheapest path.
 3. **Eval harness.** Pipecat's `pipecat eval` scripted scenarios could check tool calls (speed change, goodbye) end to end, but they need live LLM keys and, for judged criteria, a local Ollama model. Add a small manual eval suite later, or keep to unit tests for now?
 
