@@ -26,4 +26,7 @@ provider = "cartesia"
 model = "sonic-3.6"
 # Daniela - Relaxed Woman (Mexican Spanish).
 voice = "5c5ad5e7-1020-476b-8b91-fdcbe9cc313c"
+# Multilingual alternative: Skylar, native en-US with a native es-MX accent
+# (example voice in Cartesia's Get Voice API reference).
+# voice = "db6b0ed5-d5d3-463d-ae85-518a07d3c2b4"
 language = "es-MX"

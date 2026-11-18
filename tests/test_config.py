@@ -8,6 +8,7 @@ from language_coach.config import (
     ConfigError,
     DeepgramTts,
     ElevenLabsTts,
+    Runtime,
     load_app_config,
 )
 
@@ -57,6 +58,13 @@ def test_loads_minimal_config(tmp_path: Path) -> None:
 
     assert config.secrets.tts_api_key.get_secret_value() == "cartesia-key"
     assert config.bot.llm.model == "gpt-4.1"
+    assert config.runtime is Runtime.CLOUD
+
+
+def test_runtime_is_passed_through(tmp_path: Path) -> None:
+    config = load_app_config(ENV, write_config(tmp_path), Runtime.LOCAL)
+
+    assert config.runtime is Runtime.LOCAL
 
 
 @pytest.mark.parametrize(

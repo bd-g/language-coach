@@ -3,6 +3,10 @@ secret_set = "language-coach-secrets"
 agent_profile = "agent-1x"
 region = "us-east"
 
+# Krisp VIVA noise and background-voice removal; the bot adds KrispVivaFilter on Cloud.
+[krisp_viva]
+audio_filter = "tel"
+
 [scaling]
 min_agents = 0
 max_agents = 3

@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 
 from loguru import logger
+from pipecat.audio.filters.base_audio_filter import BaseAudioFilter
 from pipecat.frames.frames import EndFrame, TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker
@@ -19,7 +20,7 @@ from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.workers.runner import WorkerRunner
 
 from language_coach.admission import rejection_reason
-from language_coach.config import AppConfig, SessionConfig
+from language_coach.config import AppConfig, Runtime, SessionConfig
 from language_coach.origin import (
     DailyRoomSession,
     PhoneCall,
@@ -73,7 +74,7 @@ async def _reject(call: PhoneCall, handle_sigint: bool) -> None:
     Never joining would leave the caller on Daily's hold music for up to about
     two minutes, which may be billed as PSTN time and keeps the caller waiting.
     """
-    transport = _phone_transport(call)
+    transport = _phone_transport(call, noise_filter=None)
     worker = PipelineWorker(
         Pipeline([transport.input(), transport.output()]),
         params=_PHONE_AUDIO.pipeline_params(),
@@ -95,7 +96,7 @@ async def _reject(call: PhoneCall, handle_sigint: bool) -> None:
 
 
 async def _coach(origin: SessionOrigin, handle_sigint: bool, config: AppConfig) -> None:
-    transport, audio = _transport(origin)
+    transport, audio = _transport(origin, config.runtime)
     secrets = config.secrets
     bot = config.bot
 
@@ -180,20 +181,40 @@ async def _enforce_time_limit(worker: PipelineWorker, session: SessionConfig) ->
     )
 
 
-def _transport(origin: SessionOrigin) -> tuple[BaseTransport, _Audio]:
+def _transport(origin: SessionOrigin, runtime: Runtime) -> tuple[BaseTransport, _Audio]:
+    noise_filter = _noise_filter(runtime)
     match origin:
         case PhoneCall():
-            return _phone_transport(origin), _PHONE_AUDIO
+            return _phone_transport(origin, noise_filter), _PHONE_AUDIO
         case DailyRoomSession(room=room):
-            params = DailyParams(audio_in_enabled=True, audio_out_enabled=True)
+            params = DailyParams(
+                audio_in_enabled=True, audio_in_filter=noise_filter, audio_out_enabled=True
+            )
             return DailyTransport(room.url, room.token, BOT_NAME, params=params), _BROWSER_AUDIO
         case WebRtcSession(connection=connection):
-            params = TransportParams(audio_in_enabled=True, audio_out_enabled=True)
+            params = TransportParams(
+                audio_in_enabled=True, audio_in_filter=noise_filter, audio_out_enabled=True
+            )
             transport = SmallWebRTCTransport(webrtc_connection=connection, params=params)
             return transport, _BROWSER_AUDIO
 
 
-def _phone_transport(call: PhoneCall) -> DailyTransport:
+def _noise_filter(runtime: Runtime) -> BaseAudioFilter | None:
+    """Krisp VIVA on Pipecat Cloud (enabled by `[krisp_viva]` in pcc-deploy.toml).
+
+    The Krisp SDK only exists in the Pipecat Cloud runtime, so it is imported lazily.
+    See https://docs.pipecat.ai/pipecat-cloud/guides/krisp-viva
+    """
+    match runtime:
+        case Runtime.LOCAL:
+            return None
+        case Runtime.CLOUD:
+            from pipecat.audio.filters.krisp_viva_filter import KrispVivaFilter
+
+            return KrispVivaFilter()
+
+
+def _phone_transport(call: PhoneCall, noise_filter: BaseAudioFilter | None) -> DailyTransport:
     settings = call.request.dialin_settings
     params = DailyParams(
         api_key=call.request.daily_api_key,
@@ -202,6 +223,7 @@ def _phone_transport(call: PhoneCall) -> DailyTransport:
             call_id=settings.call_id, call_domain=settings.call_domain
         ),
         audio_in_enabled=True,
+        audio_in_filter=noise_filter,
         audio_out_enabled=True,
     )
     return DailyTransport(call.room.url, call.room.token, BOT_NAME, params=params)

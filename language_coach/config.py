@@ -3,6 +3,7 @@
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
@@ -18,6 +19,13 @@ PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
 class ConfigError(Exception):
     """Configuration is missing or invalid. Messages name settings, never secret values."""
+
+
+class Runtime(StrEnum):
+    """Where the bot runs. Krisp noise filtering only exists on Pipecat Cloud."""
+
+    LOCAL = "local"
+    CLOUD = "cloud"
 
 
 class _Strict(BaseModel):
@@ -105,9 +113,14 @@ class AppConfig:
     secrets: Secrets
     system_prompt: str
     greeting: str
+    runtime: Runtime
 
 
-def load_app_config(env: Mapping[str, str], config_path: Path = DEFAULT_CONFIG_PATH) -> AppConfig:
+def load_app_config(
+    env: Mapping[str, str],
+    config_path: Path = DEFAULT_CONFIG_PATH,
+    runtime: Runtime = Runtime.CLOUD,
+) -> AppConfig:
     """Load and validate configuration, failing fast with every problem named."""
     try:
         bot = BotConfig.model_validate(tomllib.loads(config_path.read_text(encoding="utf-8")))
@@ -119,6 +132,7 @@ def load_app_config(env: Mapping[str, str], config_path: Path = DEFAULT_CONFIG_P
         secrets=_load_secrets(env, bot.tts),
         system_prompt=_read_prompt("system_prompt.md"),
         greeting=_read_prompt("greeting.txt"),
+        runtime=runtime,
     )
 
 

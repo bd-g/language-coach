@@ -1,6 +1,6 @@
 # Production Setup
 
-The coach runs as one Pipecat Cloud agent (`language-coach`, region `us-east`, scale to zero, at most 3 concurrent sessions). A Daily phone number on Pipecat Cloud's managed dial-in webhook starts a session for each call. The Pipecat GitHub integration deploys `main`.
+The coach runs as one Pipecat Cloud agent (`language-coach`, region `us-east`, scale to zero, at most 3 concurrent sessions, Krisp VIVA noise filtering). A Daily phone number on Pipecat Cloud's managed dial-in webhook starts a session for each call. The Pipecat GitHub integration deploys `main`.
 
 Run every command below from `nix-shell` in the repository root.
 
@@ -15,10 +15,11 @@ Run every command below from `nix-shell` in the repository root.
 2. Create the secret set. Copy `.env.example` to a local `.env`, fill in real keys and the allowlisted numbers, then:
 
    ```bash
-   pipecat cloud secrets set language-coach-secrets --file .env
+   pipecat cloud secrets set language-coach-secrets --file .env --region us-east
+   pipecat cloud secrets list --region us-east
    ```
 
-   Only the key for the TTS provider selected in `config/bot.toml` is required. `ALLOWED_CALLERS` is a comma-separated list of E.164 numbers; every other caller is disconnected as soon as the call connects.
+   Every line in `.env` needs a value; comment out keys you don't use, or the command fails with "Empty key or value found". The secret set must exist in the agent's region (`us-east`) before `pipecat cloud deploy`, or the deploy fails with "Secret set 'language-coach-secrets' not found". Only the key for the TTS provider selected in `config/bot.toml` is required. `ALLOWED_CALLERS` is a comma-separated list of E.164 numbers; every other caller is disconnected as soon as the call connects.
 
 3. Set a spend limit for the organization:
 
@@ -32,7 +33,7 @@ Run every command below from `nix-shell` in the repository root.
    pipecat cloud deploy
    ```
 
-5. Connect GitHub and link the agent to `main`, so merges deploy automatically:
+5. Connect GitHub and link the agent to `main`, so merges deploy automatically. The agent must already exist from step 4 (otherwise the link returns 404 "Service not found"), and its name uses a hyphen:
 
    ```bash
    pipecat cloud github connect
@@ -48,7 +49,7 @@ Run every command below from `nix-shell` in the repository root.
 
 ## Changing secrets
 
-Re-run `pipecat cloud secrets set language-coach-secrets --file .env`. A secret change alone does not create a new agent version. Run `pipecat cloud deploy --force` so running instances pick it up.
+Re-run `pipecat cloud secrets set language-coach-secrets --file .env --region us-east`. A secret change alone does not create a new agent version. Run `pipecat cloud deploy --force` so running instances pick it up.
 
 ## Verification
 
