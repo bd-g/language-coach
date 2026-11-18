@@ -29,6 +29,7 @@ from language_coach.origin import (
     WebRtcSession,
     parse_origin,
 )
+from language_coach.practice import PracticeChoice
 from language_coach.tools import coach_tools
 from language_coach.tts import build_tts
 from language_coach.usage import UsageObserver
@@ -117,7 +118,8 @@ async def _coach(origin: SessionOrigin, handle_sigint: bool, config: AppConfig) 
     )
     tts = build_tts(bot.tts, secrets.tts_api_key.get_secret_value())
 
-    context = LLMContext(tools=list(coach_tools(bot.tts)))
+    practice = PracticeChoice()
+    context = LLMContext(tools=list(coach_tools(bot.tts, practice)))
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(context)
 
     usage = UsageObserver()
@@ -180,6 +182,7 @@ async def _coach(origin: SessionOrigin, handle_sigint: bool, config: AppConfig) 
         summary = usage.summary()
         logger.info(
             f"session ended after {time.monotonic() - started_at:.0f}s; "
+            f"practice_language={practice.label()} "
             f"tts={bot.tts.provider} tts_characters={summary.tts_characters} "
             f"llm_prompt_tokens={summary.llm_prompt_tokens} "
             f"llm_completion_tokens={summary.llm_completion_tokens}"

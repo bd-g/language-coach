@@ -17,7 +17,8 @@ from pipecat.services.llm_service import FunctionCallParams
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from language_coach.config import TtsConfig
-from language_coach.tts import SpeakingRate, speed_update
+from language_coach.practice import PracticeChoice, PracticeLanguage
+from language_coach.tts import SpeakingRate, practice_language_update, speed_update
 
 
 class EndCallReason(StrEnum):
@@ -38,6 +39,14 @@ class SetSpeakingRateArgs(BaseModel):
     reason: str | None = None
 
 
+class ChoosePracticeLanguageArgs(BaseModel):
+    """Arguments for `choose_practice_language`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    language: PracticeLanguage
+
+
 class EndCallArgs(BaseModel):
     """Arguments for `end_call`."""
 
@@ -46,8 +55,33 @@ class EndCallArgs(BaseModel):
     reason: EndCallReason
 
 
-def coach_tools(tts: TtsConfig) -> list[FunctionSchema]:
-    """Tool schemas with handlers bound to the session's TTS provider."""
+def coach_tools(tts: TtsConfig, choice: PracticeChoice) -> list[FunctionSchema]:
+    """Tool schemas with handlers bound to the session's TTS provider and practice choice."""
+
+    async def choose_practice_language(params: FunctionCallParams) -> None:
+        try:
+            language = ChoosePracticeLanguageArgs.model_validate(params.arguments).language
+        except ValidationError:
+            logger.warning("choose_practice_language called with invalid arguments")
+            await params.result_callback({"error": "language must be 'english' or 'spanish'"})
+            return
+
+        previous = choice.label()
+        choice.language = language
+        delta = practice_language_update(tts, language)
+        if delta is not None:
+            await params.llm.push_frame(TTSUpdateSettingsFrame(delta=delta))
+        logger.info(f"practice language: {previous} -> {language}")
+        await params.result_callback(
+            {
+                "practice_language": language.value,
+                "instruction": (
+                    f"The learner is practicing {language.value}. Follow the rules for that "
+                    "direction. Confirm the choice in one short sentence in the learner's "
+                    "native language, then start choosing a scenario."
+                ),
+            }
+        )
 
     async def set_speaking_rate(params: FunctionCallParams) -> None:
         try:
@@ -63,7 +97,9 @@ def coach_tools(tts: TtsConfig) -> list[FunctionSchema]:
         await params.result_callback(
             {
                 "speed": rate.value,
-                "instruction": "Confirma brevemente en español el cambio y continúa.",
+                "instruction": (
+                    "Briefly confirm the change in the learner's native language and continue."
+                ),
             }
         )
 
@@ -79,6 +115,22 @@ def coach_tools(tts: TtsConfig) -> list[FunctionSchema]:
         await params.llm.push_frame(EndWorkerFrame(reason=f"end_call:{reason}"))
 
     return [
+        FunctionSchema(
+            name="choose_practice_language",
+            description=(
+                "Record which language the learner wants to practice, as soon as they say so "
+                "at the start of the call or when they ask to switch."
+            ),
+            properties={
+                "language": {
+                    "type": "string",
+                    "enum": [language.value for language in PracticeLanguage],
+                    "description": "The language the learner wants to practice speaking.",
+                },
+            },
+            required=["language"],
+            handler=choose_practice_language,
+        ),
         FunctionSchema(
             name="set_speaking_rate",
             description=(

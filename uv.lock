@@ -441,14 +441,14 @@ wheels = [
 
 [[package]]
 name = "daily-python"
-version = "0.38.0"
+version = "0.36.0"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/41/4d0c0e6900e4be88024a1b65d78b722b12b3ec219d76912082e089a0ac92/daily_python-0.38.0-cp39-abi3-macosx_13_0_arm64.whl", hash = "sha256:b5624b983aba85aeff93ed4fadd6eafef5ea9d31493b6e45cb887d57420e771f", size = 12605500, upload-time = "2026-11-12T21:51:10.832Z" },
-    { url = "https://files.pythonhosted.org/packages/3a/ff/1df9945cb3ca6204e7fc922779ce9419a2b8d86c9414a5095b327a0ec89d/daily_python-0.38.0-cp39-abi3-macosx_13_0_x86_64.whl", hash = "sha256:d1856190c9cefaa630e3b741f35035a5318a890193ae3ed027c7e9a4b5d04265", size = 13838390, upload-time = "2026-11-12T21:51:13.553Z" },
-    { url = "https://files.pythonhosted.org/packages/09/10/1762e574bbe84db1063370c2a28cae13ccfd8ac1a7b2397ed6a4c9c4b23c/daily_python-0.38.0-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:cc4f34d3f9288926499cc9c5e933c4f7fb3c9a1ac9d30b0a3b23cc83fac106d2", size = 14375473, upload-time = "2026-11-12T21:51:16.889Z" },
-    { url = "https://files.pythonhosted.org/packages/fd/cb/e63b64336a9b50d4a2f5e557666b4e3f1753ca72447dd44060241d814d3d/daily_python-0.38.0-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:d528926073c892841e71619515fdb4489dbc889336c2063c0e97b4e0df40ce3c", size = 15152522, upload-time = "2026-11-12T21:51:19.701Z" },
-    { url = "https://files.pythonhosted.org/packages/7b/26/8e4388d24e3242fdd523f9039bbe4656ff3f64a0bd08a1457de6fd18f9e8/daily_python-0.38.0-cp39-abi3-win_amd64.whl", hash = "sha256:fa75eed91106689195e2c2b1935c3f681185d40d0a0ea8d598a7287571e5be16", size = 13801949, upload-time = "2026-11-12T21:51:22.653Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/38/b5a404007cbc5aa3594351b23df858963d1cba2e51789d798e4331ab3175/daily_python-0.36.0-cp38-abi3-macosx_13_0_arm64.whl", hash = "sha256:2330f709756d3abadd29d997bfdfa20097c2c246c844eda25a0a2b429c1323d2", size = 12551072, upload-time = "2026-10-17T00:54:01.949Z" },
+    { url = "https://files.pythonhosted.org/packages/13/a4/c20c214de18ef438ebbce5892e07848935da0b29541d28889cec6795c9ae/daily_python-0.36.0-cp38-abi3-macosx_13_0_x86_64.whl", hash = "sha256:fb29ddbafc5997aedbca5466f7de9c259d4aad8a69af6d284d0985b7921ce3a2", size = 13806674, upload-time = "2026-10-17T00:54:04.948Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/f3/982c85d1b44a3babfd915c56054b2974391d84980c7698f31896eae4a7ec/daily_python-0.36.0-cp38-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:61f7806937f6cbf0f2e622df0f70ede3be7cd52f32e81b86c880130b093198d2", size = 14305211, upload-time = "2026-10-17T00:54:07.729Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/b5/a70a012bdf11a2bcd85a96f075a8da9c957d3e67134cd044dd242debcb63/daily_python-0.36.0-cp38-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:18b5dbf1bb4d4aea4708a958573e8f95c02c78ca23e1d42354efc7eb92c1402b", size = 15066700, upload-time = "2026-10-17T00:54:10.374Z" },
+    { url = "https://files.pythonhosted.org/packages/04/03/f59f8cae3630aa8c76cdec1dc0cf6d9972c272a59366023b60c52e50d090/daily_python-0.36.0-cp38-abi3-win_amd64.whl", hash = "sha256:743f855d77e4eb71efc3dabcacf6110e8cdfcc3febba933256ab3211cf3dd7ac", size = 13751386, upload-time = "2026-10-17T00:54:12.893Z" },
 ]
 
 [[package]]
@@ -1065,6 +1065,7 @@ name = "language-coach"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "daily-python" },
     { name = "pipecat-ai", extra = ["daily", "deepgram", "openai", "runner", "webrtc"] },
     { name = "pipecatcloud" },
     { name = "pydantic" },
@@ -1079,6 +1080,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "daily-python", specifier = ">=0.36,<0.37" },
     { name = "pipecat-ai", extras = ["cartesia", "daily", "deepgram", "elevenlabs", "openai", "runner", "webrtc"], specifier = "==1.16.0" },
     { name = "pipecatcloud", specifier = ">=1.3.0" },
     { name = "pydantic", specifier = ">=2.11,<3" },

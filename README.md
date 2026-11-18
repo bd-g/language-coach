@@ -1,10 +1,10 @@
 # Language Coach
 
-A phone-based English conversation coach for native Spanish speakers from Mexico. It is built as a [Pipecat](https://docs.pipecat.ai) voice bot and deployed to Pipecat Cloud.
+A phone-based bilingual conversation coach. Each call starts by asking whether the caller wants to practice English (coached in Mexican Spanish) or Spanish (coached in English). It is built as a [Pipecat](https://docs.pipecat.ai) voice bot and deployed to Pipecat Cloud.
 
 - **Pipeline:** Deepgram Flux speech-to-text (`flux-general-multi`, English and Spanish), then an OpenAI LLM, then a configurable TTS provider (Cartesia, Deepgram Aura-2, or ElevenLabs).
 - **Phone:** a Daily number through Pipecat Cloud's managed dial-in. Only allowlisted callers get a coaching session.
-- **Tools:** the coach can change its speaking speed and end the call. Sessions are limited to 30 minutes.
+- **Tools:** the coach records the chosen practice language (which also sets the voice's locale), changes its speaking speed, and ends the call. Sessions are limited to 30 minutes.
 
 ## Layout
 
@@ -17,7 +17,8 @@ language_coach/
   admission.py            allowlist decision for phone calls
   session.py              reject unknown callers, or run the coaching pipeline
   failures.py             when a failing provider should end the session
-  tools.py                set_speaking_rate and end_call tools
+  practice.py             practice language (English or Spanish) per session
+  tools.py                choose_practice_language, set_speaking_rate and end_call tools
   tts.py                  TTS provider construction and speed mapping
   usage.py                per-session TTS character and LLM token totals
   prompts/                system prompt and greeting

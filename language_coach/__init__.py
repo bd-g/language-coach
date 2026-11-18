@@ -1,1 +1,1 @@
-"""English conversation coach for native Spanish speakers, as a Pipecat voice bot."""
+"""Bilingual English/Spanish conversation coach, as a Pipecat voice bot."""

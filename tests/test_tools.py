@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from language_coach.config import DeepgramTts
+from language_coach.practice import PracticeChoice
 from language_coach.tools import EndCallArgs, EndCallReason, SetSpeakingRateArgs, coach_tools
 
 
@@ -28,9 +29,12 @@ def test_unknown_end_call_reason_is_rejected() -> None:
 
 
 def test_coach_tools_expose_constrained_schemas() -> None:
-    tools = {tool.name: tool for tool in coach_tools(DeepgramTts(provider="deepgram", voice="v"))}
+    tools = {
+        tool.name: tool
+        for tool in coach_tools(DeepgramTts(provider="deepgram", voice="v"), PracticeChoice())
+    }
 
-    assert set(tools) == {"set_speaking_rate", "end_call"}
+    assert set(tools) == {"choose_practice_language", "set_speaking_rate", "end_call"}
     speed = tools["set_speaking_rate"].properties["speed"]
     assert (speed["minimum"], speed["maximum"]) == (0.7, 1.3)
     assert tools["end_call"].properties["reason"]["enum"] == [r.value for r in EndCallReason]

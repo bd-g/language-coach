@@ -3,7 +3,7 @@
 
 [session]
 max_duration_seconds = 1800
-time_limit_message = "Ya llegamos al límite de tiempo de esta sesión. ¡Muy buen trabajo hoy! Hasta la próxima."
+time_limit_message = "Ya llegamos al límite de tiempo. We've reached the time limit. ¡Buen trabajo! Great work, see you next time."
 # Spoken before ending when the speech-to-text or LLM provider fails.
 failure_message = "Lo siento, algo salió mal. Sorry, something went wrong. Por favor intenta de nuevo más tarde."
 

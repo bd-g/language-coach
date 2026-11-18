@@ -11,6 +11,7 @@ from pipecat.services.settings import TTSSettings
 from pipecat.services.tts_service import TTSService
 
 from language_coach.config import CartesiaTts, DeepgramTts, ElevenLabsTts, TtsConfig
+from language_coach.practice import PracticeLanguage
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +56,24 @@ def build_tts(config: TtsConfig, api_key: str) -> TTSService:
                     model=config.model, voice=config.voice, language=config.language
                 ),
             )
+
+
+def practice_language_update(config: TtsConfig, language: PracticeLanguage) -> TTSSettings | None:
+    """Settings delta so role-play in the practice language gets its native accent.
+
+    Cartesia speaks one locale per request, so the locale follows the practice
+    language (American English or Mexican Spanish). Aura-2 voice models are
+    fixed per language and code-switch on their own, so they are left alone.
+    """
+    match config:
+        case CartesiaTts():
+            locale = {PracticeLanguage.ENGLISH: "en-US", PracticeLanguage.SPANISH: "es-MX"}
+            return CartesiaTTSService.Settings(language=locale[language])
+        case ElevenLabsTts():
+            code = {PracticeLanguage.ENGLISH: "en", PracticeLanguage.SPANISH: "es"}
+            return ElevenLabsTTSService.Settings(language=code[language])
+        case DeepgramTts():
+            return None
 
 
 def speed_update(config: TtsConfig, rate: SpeakingRate) -> TTSSettings:
