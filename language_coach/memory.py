@@ -225,17 +225,56 @@ class Mem0Store:
 
 
 class SessionMemory:
-    """Memory for one phone caller. Failures and timeouts never break the call."""
+    """Memory for one phone caller. Never slows or breaks the call.
+
+    `prefetch` looks up both practice languages in the background as soon as the
+    session starts, while the greeting plays. `recalled` waits at most
+    `recall_wait_seconds` for that lookup, then continues without memory.
+    """
 
     def __init__(
-        self, store: LearnerMemoryStore, caller: CallerNumber, *, timeout_seconds: float
+        self,
+        store: LearnerMemoryStore,
+        caller: CallerNumber,
+        *,
+        timeout_seconds: float,
+        recall_wait_seconds: float,
     ) -> None:
         self._store = store
         self._caller = caller
         self._timeout_seconds = timeout_seconds
+        self._recall_wait_seconds = recall_wait_seconds
+        self._prefetch: asyncio.Task[dict[PracticeLanguage, list[MemoryRecord]]] | None = None
 
-    async def recall(self, language: PracticeLanguage) -> list[MemoryRecord]:
-        """Memories for this caller in `language`; empty if Mem0 is slow or failing."""
+    def prefetch(self) -> None:
+        """Start looking up memories for both practice languages; idempotent."""
+        if self._prefetch is None:
+            self._prefetch = asyncio.create_task(self._recall_all(), name="memory-prefetch")
+
+    async def recalled(self, language: PracticeLanguage) -> list[MemoryRecord]:
+        """Prefetched memories for `language`, or none if not ready within the wait budget."""
+        self.prefetch()
+        task = self._prefetch
+        assert task is not None
+        done, _ = await asyncio.wait({task}, timeout=self._recall_wait_seconds)
+        if not done:
+            learner = LearnerId.for_caller(self._caller, language)
+            logger.warning(f"memory not ready in time for {learner}; continuing without it")
+            return []
+        return task.result()[language]
+
+    async def close(self) -> None:
+        """Cancel a lookup that is still running when the session ends."""
+        if self._prefetch is not None and not self._prefetch.done():
+            self._prefetch.cancel()
+            await asyncio.gather(self._prefetch, return_exceptions=True)
+
+    async def _recall_all(self) -> dict[PracticeLanguage, list[MemoryRecord]]:
+        languages = list(PracticeLanguage)
+        results = await asyncio.gather(*(self._recall(language) for language in languages))
+        return dict(zip(languages, results, strict=True))
+
+    async def _recall(self, language: PracticeLanguage) -> list[MemoryRecord]:
         learner = LearnerId.for_caller(self._caller, language)
         try:
             records = await asyncio.wait_for(self._store.recall(learner), self._timeout_seconds)

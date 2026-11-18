@@ -41,7 +41,7 @@ async def _practice_language_result(
     if memory is None:
         return {"practice_language": language.value, "instruction": f"{instruction}, then start."}
 
-    records = await memory.recall(language)
+    records = await memory.recalled(language)
     if records:
         instruction += (
             ". This is a returning learner: in the same breath, mention one specific thing "

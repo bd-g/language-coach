@@ -53,6 +53,7 @@ class MemoryConfig(_Strict):
 
     enabled: bool
     timeout_seconds: PositiveFloat
+    recall_wait_seconds: PositiveFloat
 
 
 class SttConfig(_Strict):

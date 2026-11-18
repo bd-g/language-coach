@@ -55,7 +55,7 @@ To change dependencies, run `uv add <package>` (or edit `pyproject.toml` and run
 
 ## Learner memory
 
-Memory is keyed by caller phone number and practice language. When the caller picks a language, one Mem0 lookup loads their notes into the conversation. When the session ends, including when the caller hangs up abruptly, the conversation is sent to Mem0 once, and Mem0 extracts phrases taught, recurring mistakes, progress and preferences. Browser sessions have no caller identity, so they don't use memory.
+Memory is keyed by caller phone number and practice language. As soon as a phone session starts, Mem0 is looked up in the background for both languages while the greeting plays. When the caller picks a language, the coach waits at most `recall_wait_seconds` (0.5 s) for those notes, then continues without them if Mem0 is slow. When the session ends, including when the caller hangs up abruptly, the conversation is sent to Mem0 once, and Mem0 extracts phrases taught, recurring mistakes, progress and preferences. Browser sessions have no caller identity, so they don't use memory.
 
 Review or delete a learner's memories (reads `MEM0_API_KEY` from `.env`):
 

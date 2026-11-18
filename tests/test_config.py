@@ -29,6 +29,7 @@ failure_message = "Algo salió mal."
 [memory]
 enabled = {memory_enabled}
 timeout_seconds = 5.0
+recall_wait_seconds = 0.5
 
 [stt]
 model = "flux-general-multi"

@@ -10,7 +10,10 @@ failure_message = "Lo siento, algo salió mal. Sorry, something went wrong. Por 
 # Long-term memory per phone caller and practice language, stored in Mem0.
 [memory]
 enabled = true
+# Limit for each Mem0 request; lookups run in the background from the start of the call.
 timeout_seconds = 10.0
+# Longest the reply to the language choice waits for that lookup before going without it.
+recall_wait_seconds = 0.5
 
 [stt]
 model = "flux-general-multi"

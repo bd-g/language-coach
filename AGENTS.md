@@ -42,7 +42,8 @@
 
 - Log callers only as `CallerNumber` or `LearnerId` (both render as the last four digits). Never log full phone numbers, API keys, transcripts, or audio.
 - Learner memory is the one place full numbers and conversation content leave the bot: Mem0 user ids contain the E.164 number, and the session's spoken turns are sent to Mem0 once at session end. This is a deliberate user choice; do not add other stores of transcripts or numbers.
-- Keep memory to one recall per session (on practice-language choice) and one save (at session end). Do not use Pipecat's per-turn `Mem0MemoryService`; it adds latency and per-turn extraction cost.
+- Memory must never add latency to the conversation: look memories up in a background prefetch at session start (one lookup per practice language), wait at most `recall_wait_seconds` for it when the learner picks a language, and save once after the session ends. Do not use Pipecat's per-turn `Mem0MemoryService`; it adds latency and per-turn extraction cost.
+- Failures in optional services such as Mem0 are logged and otherwise silent; do not add alerting integrations.
 - Log tool outcomes as categories (`EndCallReason`, numeric speed), not free-text arguments.
 - Log per-session usage (TTS characters, LLM tokens, duration, TTS provider) at session end so provider costs can be compared.
 

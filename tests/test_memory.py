@@ -99,8 +99,10 @@ class FakeStore:
     )
     fail: bool = False
     delay: float = 0.0
+    recalled: list[LearnerId] = field(default_factory=list[LearnerId])
 
     async def recall(self, learner: LearnerId) -> list[MemoryRecord]:
+        self.recalled.append(learner)
         await asyncio.sleep(self.delay)
         if self.fail:
             raise RuntimeError("mem0 down")
@@ -124,26 +126,72 @@ CONVERSATION = [
 ]
 
 
-async def test_recall_returns_records_for_the_caller() -> None:
-    store = FakeStore(records=[MemoryRecord(memory="Learned 'me da igual'")])
-    memory = SessionMemory(store, CALLER, timeout_seconds=1.0)
+def session_memory(store: FakeStore, *, wait: float = 1.0) -> SessionMemory:
+    return SessionMemory(store, CALLER, timeout_seconds=1.0, recall_wait_seconds=wait)
 
-    records = await memory.recall(PracticeLanguage.SPANISH)
+
+async def test_prefetched_memories_are_returned_for_the_chosen_language() -> None:
+    store = FakeStore(records=[MemoryRecord(memory="Learned 'me da igual'")])
+    memory = session_memory(store)
+
+    memory.prefetch()
+    records = await memory.recalled(PracticeLanguage.SPANISH)
 
     assert [r.memory for r in records] == ["Learned 'me da igual'"]
 
 
-async def test_recall_failures_and_timeouts_return_no_memories() -> None:
-    failing = SessionMemory(FakeStore(fail=True), CALLER, timeout_seconds=1.0)
-    slow = SessionMemory(FakeStore(delay=0.5), CALLER, timeout_seconds=0.05)
+async def test_prefetch_looks_up_both_languages_once() -> None:
+    store = FakeStore()
+    memory = session_memory(store)
 
-    assert await failing.recall(PracticeLanguage.ENGLISH) == []
-    assert await slow.recall(PracticeLanguage.ENGLISH) == []
+    memory.prefetch()
+    memory.prefetch()
+    await memory.recalled(PracticeLanguage.ENGLISH)
+    await memory.recalled(PracticeLanguage.SPANISH)
+
+    assert sorted(learner.value for learner in store.recalled) == [
+        LearnerId.for_caller(CALLER, PracticeLanguage.ENGLISH).value,
+        LearnerId.for_caller(CALLER, PracticeLanguage.SPANISH).value,
+    ]
+
+
+async def test_slow_mem0_never_delays_the_reply_beyond_the_wait_budget() -> None:
+    memory = session_memory(FakeStore(delay=1.0), wait=0.05)
+    memory.prefetch()
+    loop = asyncio.get_running_loop()
+
+    started = loop.time()
+    records = await memory.recalled(PracticeLanguage.ENGLISH)
+
+    assert records == []
+    assert loop.time() - started < 0.5
+    await memory.close()
+
+
+async def test_recall_failures_return_no_memories() -> None:
+    memory = session_memory(FakeStore(fail=True))
+
+    memory.prefetch()
+
+    assert await memory.recalled(PracticeLanguage.ENGLISH) == []
+
+
+async def test_recalled_without_prefetch_still_works() -> None:
+    store = FakeStore(records=[MemoryRecord(memory="a")])
+
+    assert len(await session_memory(store).recalled(PracticeLanguage.ENGLISH)) == 1
+
+
+async def test_close_cancels_a_pending_prefetch() -> None:
+    memory = session_memory(FakeStore(delay=10.0))
+    memory.prefetch()
+
+    await memory.close()
 
 
 async def test_remember_saves_under_the_language_scoped_learner() -> None:
     store = FakeStore()
-    memory = SessionMemory(store, CALLER, timeout_seconds=1.0)
+    memory = session_memory(store)
 
     await memory.remember(PracticeLanguage.ENGLISH, CONVERSATION)
 
@@ -155,7 +203,7 @@ async def test_remember_saves_under_the_language_scoped_learner() -> None:
 
 async def test_remember_skips_conversations_without_learner_speech() -> None:
     store = FakeStore()
-    memory = SessionMemory(store, CALLER, timeout_seconds=1.0)
+    memory = session_memory(store)
 
     await memory.remember(PracticeLanguage.ENGLISH, CONVERSATION[:1])
 
@@ -174,6 +222,6 @@ def test_unreachable_mem0_at_startup_disables_memory_instead_of_failing(
 
 
 async def test_remember_failures_are_contained() -> None:
-    memory = SessionMemory(FakeStore(fail=True), CALLER, timeout_seconds=1.0)
+    memory = session_memory(FakeStore(fail=True))
 
     await memory.remember(PracticeLanguage.ENGLISH, CONVERSATION)

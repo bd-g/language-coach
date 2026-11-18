@@ -74,7 +74,10 @@ async def run_session(
     logger.info(f"starting {type(origin).__name__} session; caller {caller}")
     memory = (
         SessionMemory(
-            memory_store, origin.caller, timeout_seconds=config.bot.memory.timeout_seconds
+            memory_store,
+            origin.caller,
+            timeout_seconds=config.bot.memory.timeout_seconds,
+            recall_wait_seconds=config.bot.memory.recall_wait_seconds,
         )
         if memory_store is not None and isinstance(origin, PhoneCall) and origin.caller
         else None
@@ -115,6 +118,9 @@ async def _coach(
     config: AppConfig,
     memory: SessionMemory | None,
 ) -> None:
+    if memory is not None:
+        # Look up memories while the call connects and the greeting plays.
+        memory.prefetch()
     transport, audio = _transport(origin, config.runtime)
     secrets = config.secrets
     bot = config.bot
@@ -196,10 +202,12 @@ async def _coach(
             task.cancel()
         # Runs after hang-ups too: the runner returns once the client disconnects, and
         # Pipecat Cloud keeps the session alive until bot() returns.
-        if memory is not None and practice.language is not None:
-            await memory.remember(
-                practice.language, conversation_for_memory(context.get_messages())
-            )
+        if memory is not None:
+            await memory.close()
+            if practice.language is not None:
+                await memory.remember(
+                    practice.language, conversation_for_memory(context.get_messages())
+                )
         summary = usage.summary()
         logger.info(
             f"session ended after {time.monotonic() - started_at:.0f}s; "

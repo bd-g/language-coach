@@ -127,17 +127,17 @@ CALLER = CallerNumber.parse("+15551234567")
 
 async def test_returning_learner_gets_memories_for_the_chosen_language() -> None:
     store = RecallStore([MemoryRecord(memory="Confuses ser and estar")])
-    memory = SessionMemory(store, CALLER, timeout_seconds=1.0)
+    memory = SessionMemory(store, CALLER, timeout_seconds=1.0, recall_wait_seconds=1.0)
 
     params = await call_choose({"language": "spanish"}, PracticeChoice(), memory)
 
-    assert store.recalled == [LearnerId.for_caller(CALLER, PracticeLanguage.SPANISH)]
+    assert LearnerId.for_caller(CALLER, PracticeLanguage.SPANISH) in store.recalled
     assert params.results[0]["learner_memory"] == ["Confuses ser and estar"]
     assert "returning learner" in params.results[0]["instruction"]
 
 
 async def test_new_learner_is_told_this_is_a_first_session() -> None:
-    memory = SessionMemory(RecallStore([]), CALLER, timeout_seconds=1.0)
+    memory = SessionMemory(RecallStore([]), CALLER, timeout_seconds=1.0, recall_wait_seconds=1.0)
 
     params = await call_choose({"language": "english"}, PracticeChoice(), memory)
 
