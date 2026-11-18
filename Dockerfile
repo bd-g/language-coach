@@ -1,18 +1,15 @@
-FROM rust:1-alpine AS builder
+FROM dailyco/pipecat-base:0.4.2-py3.13
 
-RUN apk add --no-cache build-base ca-certificates perl
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+# Keep transcripts and tool arguments out of what Pipecat Cloud publishes.
+ENV PCC_WITHHOLD_CONTENT=true
 
-WORKDIR /workspace
-COPY . .
-RUN cargo build --release -p language-coach-server --target x86_64-unknown-linux-musl \
-    && strip /workspace/target/x86_64-unknown-linux-musl/release/language-coach-server
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-install-project --no-dev
 
-FROM scratch
-
-WORKDIR /app
-COPY --from=builder /workspace/target/x86_64-unknown-linux-musl/release/language-coach-server /usr/local/bin/language-coach-server
-
-USER 65532:65532
-
-ENTRYPOINT ["/usr/local/bin/language-coach-server"]
-CMD ["--config", "/app/config/production.toml"]
+COPY ./config config
+COPY ./language_coach language_coach
+COPY ./bot.py bot.py

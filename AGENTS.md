@@ -2,49 +2,64 @@
 
 ## Engineering Style
 
-- Write small, direct Rust. Prefer the simplest correct design over framework, abstraction, or infrastructure growth.
-- Lean on the type system. Parse into domain types at boundaries; do not pass loosely validated strings, JSON blobs, or primitive aliases through core logic.
-- Avoid duplication aggressively. If two paths exist, share the protocol/session boundary rather than copy behavior.
-- Keep infrastructure boring: one server binary, explicit config, local fake peers for tests, and no new services unless the plan requires them.
-- Use concise rustdoc on public structs, enums, traits, and functions that model data flow or protocol behavior. Avoid obvious comments in function bodies.
+- Write small, direct Python. Prefer the simplest correct design over framework, abstraction, or infrastructure growth.
+- Lean on the type system. Parse into domain types at boundaries; do not pass loosely validated strings, dicts, or primitive aliases through core logic.
+- Avoid duplication aggressively. If two paths exist (phone and browser sessions), share the session boundary rather than copy behavior.
+- Keep infrastructure boring: one Pipecat bot on Pipecat Cloud, explicit config, Daily for telephony, and no extra services (webhook servers, databases, metrics stacks) unless the user asks for them.
+- Use concise docstrings on public classes and functions that model data flow or provider behavior. Avoid obvious comments in function bodies.
 - Keep an explicit running list of unresolved user questions in `QUESTIONS.md` during implementation. Update it as you discover uncertainties, then present that list at the end of a working phase.
 - Incorporate user code review feedback into both code changes and this file when the feedback describes a durable engineering preference.
-- Prefer module layouts that keep entrypoints small and group concerns into named files like `handler.rs` plus `handler/route.rs`; avoid concentrating project logic in `main.rs` or `lib.rs`.
+- Keep entrypoints small: `bot.py` only loads config and delegates to `language_coach/`. Group concerns into named modules (`config.py`, `origin.py`, `session.py`, `tools.py`, `tts.py`) rather than growing one file.
+- Minimize per-call cost. Prefer providers and settings that keep TTS characters, LLM tokens, and agent minutes low, and never start AI services for sessions that will be rejected.
+
+## Typing
+
+- `pyright` runs in `strict` mode on `bot.py`, `language_coach/`, and `tests/`. Do not loosen it globally.
+- Every `# pyright: ignore[rule]` names the rule and has a short comment explaining the upstream gap. Unnecessary ignores are errors.
+- Model domain values as frozen dataclasses, frozen pydantic models, `StrEnum`s, and `Literal`s instead of bare `str`/`float`. Examples: `CallerNumber`, `SpeakingRate`, `EndCallReason`, the `TtsConfig` union.
+- Use discriminated unions plus `match` for variants (TTS providers, session origins). Keep `match` exhaustive so pyright flags new variants.
+- Do not use `Any` or `dict[str, Any]` in core logic. `Any` is acceptable only where Pipecat's own API is untyped (for example a SmallWebRTC connection handle), and it must not spread further.
+
+## Boundaries And Parsing
+
+- Parse at the edges, trust inside: `config/bot.toml` and the environment go through `config.py`; runner arguments and Daily dial-in bodies go through `origin.py`; LLM tool arguments go through pydantic models in `tools.py`.
+- Our own config models use `extra="forbid"`. Provider payloads tolerate unknown additive fields but must validate required fields.
+- Startup fails fast on invalid config or missing secrets. Error messages name settings and fields, never secret values or phone numbers.
+- Tool schemas are explicit `FunctionSchema`s with JSON-schema constraints (`minimum`, `maximum`, `enum`). Handlers validate `params.arguments` into a pydantic model and return a safe error result on invalid input. Do not rely on direct-function signature inference for constrained arguments.
+- Document provider quirks and spec links in docstrings on the types that model them. When provider docs change or ambiguity is discovered, update the docstring and `QUESTIONS.md` before broadening types.
+
+## Pipecat Practices
+
+- Pipecat moves fast. Verify every class, import, and setting against the installed package source (`python -c "import pipecat, os; print(os.path.dirname(pipecat.__file__))"`) or current docs before using it. Do not write Pipecat APIs from memory.
+- Use current names: `PipelineWorker` with `WorkerRunner`, `EndWorkerFrame` to end from a tool, and service `settings=Service.Settings(...)`. Do not use deprecated `PipelineTask`, `EndTaskFrame`, `params=`/`InputParams`, or init-arg voices.
+- Change a running pipeline by pushing frames (`TTSUpdateSettingsFrame`, `TTSSpeakFrame`, `EndFrame`), not by mutating services.
+- Use Pipecat's built-in services, transports, and turn handling rather than custom WebSocket or audio code. Deepgram Flux owns turn detection; do not add a VAD unless it is needed.
+- Keep the canonical cascade order: transport input, STT, user aggregator, LLM, TTS, transport output, assistant aggregator.
+- The base image imports `bot.bot()` from `/app`. Keep that contract, and copy any new top-level directories in the `Dockerfile`.
+
+## Privacy And Logging
+
+- Log callers only as `CallerNumber` (which renders as the last four digits). Never log full phone numbers, API keys, transcripts, or audio.
+- Log tool outcomes as categories (`EndCallReason`, numeric speed), not free-text arguments.
+- Log per-session usage (TTS characters, LLM tokens, duration, TTS provider) at session end so provider costs can be compared.
 
 ## Testing
 
-- Use TDD for new behavior: write the smallest failing unit or fake-peer integration test first, then implement.
-- Prefer deterministic tests over live provider calls. Do not require Telnyx or Deepgram credentials in CI.
-- Test protocol boundaries, config parsing, metrics side effects, and failure paths as first-class behavior.
-
-## Rust Practices
-
-- Prefer explicit enums and newtypes for session modes, IDs, auth tokens, phone numbers, codecs, provider events, and error classes.
-- Keep parsing, validation, and redaction at the edge. Core code should receive typed, trusted values.
-- Model external API payloads with strict Serde structs/enums (including event discriminators and documented variants) instead of manual JSON/value-based deserialization.
-- Prefer Serde-derived models over ad-hoc parsing: use tagged enums for discriminated payloads, and field-level custom deserializers only when the API shape requires adaptation.
-- Avoid passing `serde_json::Value` through core logic; deserialize into typed domain structs as early as possible and keep `Value` usage isolated to schema-like passthrough fields.
-- Prefer iterators and small functions when they clarify intent, but do not split code just to create helpers.
-- Propagate typed errors with enough context for logs and metrics without exposing secrets or PII.
-- Avoid redundant Serde attributes; do not add `#[serde(default)]` on `Option<T>` fields because missing values already deserialize to `None`.
-- Never invoke async code between iterations of a `tokio::select!` loop. Queue async sink writes through `sink_queue` or an equivalent send task so the loop returns directly to `tokio::select!` after handling each branch.
-
-## Protocol Modeling
-
-- Treat `crates/protocol` as the provider wire-format boundary. Telnyx, Deepgram, and debug media JSON should deserialize into typed Rust structs/enums before reaching session logic.
-- Put provider wire types in a provider-named module (`telnyx::Event`, `deepgram::ServerMessage`) and avoid repeating the provider in type names inside that module.
-- Every public wire message enum, variant payload, and struct must have concise rustdoc with a canonical API spec URL when the type maps to provider behavior. Rustdoc should explain what is not obvious from the module/type/field names: wire-format gotchas, provider quirks, and why a shape is modeled a certain way. Do not restate provider, direction, or discriminator details when the module name, parent enum, Serde attributes, and variant/type names already communicate them.
-- Prefer native Serde attributes for provider shapes: `tag`, `rename`, `rename_all`, `with`, `flatten`, and `untagged` when they directly match the API shape.
-- Do not hand-write JSON dispatch, stringly typed message parsing, or manual discriminator matching when Serde can model the protocol directly.
-- Use field-level custom serializers/deserializers only for real wire-format mismatches, such as JSON strings containing nested JSON or base64-encoded bytes. Document the provider reason in rustdoc or a focused test name.
-- Model discriminators, provider names, codecs, containers, roles, and message types as enums/newtypes instead of unconstrained `String`s unless the provider explicitly allows arbitrary values.
-- Unknown additive fields from providers may be tolerated. Unknown message type/event discriminants must be surfaced as explicit `tracing` errors at the receive boundary.
-- Do not pass `serde_json::Value` through core protocol/session logic. Keep it only for schema passthrough fields or immediately parse it into typed tool/request structs at the boundary.
-- Protocol tests must include documented provider fixtures for every modeled message type, including malformed payloads and unknown discriminators.
-- When provider docs change or ambiguity is discovered, update rustdoc spec links and `QUESTIONS.md` before broadening protocol types.
+- Use TDD for new behavior: write the smallest failing test first, then implement.
+- Prefer deterministic tests. Do not require Deepgram, OpenAI, TTS, Daily, or Pipecat Cloud credentials in CI.
+- Test boundaries as first-class behavior: config parsing and failure messages, dial-in body fixtures (valid, malformed, withheld caller ID), tool argument validation, provider speed mapping, and usage accounting.
+- Use `pipecat.tests.utils.run_test` for frame processors and observers instead of hand-rolled pipelines.
+- Provider fixtures follow documented payloads and cite the doc URL in the test module.
 
 ## Verification
 
-- Run `cargo fmt --check`, `cargo clippy --all-targets`, and relevant tests before considering code complete.
-- If a change touches the full workspace or shared protocol behavior, run `cargo test --workspace`.
-- Use the nix shell for all Rust development. If a new system dependency is needed, add it to `shell.nix` first. Do not rely on implicit host/system packages.
+- Run all checks inside `nix-shell`: `uv lock --check`, `ruff format --check .`, `ruff check .`, `pyright`, and `pytest`. CI runs the same commands and is a required check for pull requests into `main`.
+- Smoke-test startup with `python bot.py` (local playground at `http://localhost:7860`) after changing session wiring. Rebuild the Docker image when changing the `Dockerfile` or dependencies.
+- `main` deploys automatically through the Pipecat Cloud GitHub integration, so changes reach `main` only through pull requests.
+
+## Nix And Dependencies
+
+- Use the nix shell for all development. Python dependencies are locked in `uv.lock` and materialized by uv2nix; do not `pip install` or create ad-hoc virtualenvs.
+- Add or change Python dependencies with `uv add`/`uv lock` inside the nix shell, then re-enter the shell. Packages that need build fixes go in `nix/overrides.nix`.
+- New system dependencies go into `shell.nix` first. Nix inputs are pinned in `nix/sources.nix`.
+- Keep the Python minor version in `pyproject.toml`, `shell.nix`, and the `Dockerfile` base image tag in sync.

@@ -1,7 +1,15 @@
 .git
-target
-**/target
+.github
 .direnv
+.venv
+.env
+.env.*
+**/__pycache__
+.pytest_cache
+.ruff_cache
+nix
+tests
+docs
 result
 result-*
 *.log

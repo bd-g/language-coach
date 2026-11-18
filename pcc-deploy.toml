@@ -1,0 +1,8 @@
+agent_name = "language-coach"
+secret_set = "language-coach-secrets"
+agent_profile = "agent-1x"
+region = "us-east"
+
+[scaling]
+min_agents = 0
+max_agents = 3

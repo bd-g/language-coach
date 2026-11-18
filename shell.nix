@@ -1,42 +1,49 @@
-# This sets up a development environment using nix.
-# It useful to anyone who uses nix and useless otherwise.
+# Development shell. Python dependencies come from uv.lock through uv2nix, so
+# `uv lock` stays the single source of truth for package versions.
 
 let
-  moz_overlay = import (builtins.fetchTarball https://github.com/mozilla/nixpkgs-mozilla/archive/master.tar.gz);
-  nixpkgs = import <nixpkgs> { overlays = [ moz_overlay ]; };
-  # If you want to use the beta Rust channel, use the following instead: 
-  # rustChannel = nixpkgs.latest.rustChannels.beta.rust.override {
-  rustChannel = nixpkgs.latest.rustChannels.stable.rust.override {
-    extensions = [
-      "rust-analysis"
-      "rust-src"
-    ];
+  sources = import ./nix/sources.nix;
+  pkgs = import sources.nixpkgs { };
+  inherit (pkgs) lib;
+
+  pyproject-nix = import sources.pyproject-nix { inherit lib; };
+  uv2nix = import sources.uv2nix { inherit pyproject-nix lib; };
+  pyproject-build-systems = import sources.pyproject-build-systems {
+    inherit pyproject-nix uv2nix lib;
   };
+
+  python = pkgs.python313;
+
+  workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
+
+  pythonSet =
+    (pkgs.callPackage pyproject-nix.build.packages { inherit python; }).overrideScope
+      (
+        lib.composeManyExtensions [
+          pyproject-build-systems.overlays.wheel
+          (workspace.mkPyprojectOverlay { sourcePreference = "wheel"; })
+          (import ./nix/overrides.nix)
+        ]
+      );
+
+  virtualenv = pythonSet.mkVirtualEnv "language-coach-dev-env" workspace.deps.all;
 in
-with nixpkgs;
-mkShell {
+pkgs.mkShell {
   name = "language-coach";
 
-  buildInputs = [
-    rustChannel
-    rust-analyzer
-    mold-wrapped
-    pkg-config
-    alsa-lib
+  packages = [
+    virtualenv
+    pkgs.uv
+    pkgs.pyright
   ];
 
-  shellHook = let
-    standardLibs = [
-      stdenv.cc.cc.lib
-    ];
-    
-    standardLibPaths = lib.makeLibraryPath standardLibs;
-    
-  in ''
-    export RUST_BACKTRACE=1;
-    export LD_LIBRARY_PATH="${standardLibPaths}:$LD_LIBRARY_PATH"
-    export PKG_CONFIG_PATH="${stdenv.cc.cc.lib}/lib/pkgconfig"
+  env = {
+    UV_NO_SYNC = "1";
+    UV_PYTHON = "${virtualenv}/bin/python";
+    UV_PYTHON_DOWNLOADS = "never";
+  };
 
-    export RUSTFLAGS="-C link-arg=-fuse-ld=mold"
+  shellHook = ''
+    unset PYTHONPATH
   '';
 }

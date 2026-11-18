@@ -1,0 +1,29 @@
+# Non-secret bot tunables. Secrets and the caller allowlist come from the
+# environment (Pipecat Cloud secret set, or `.env` locally).
+
+[session]
+max_duration_seconds = 1800
+time_limit_message = "Ya llegamos al límite de tiempo de esta sesión. ¡Muy buen trabajo hoy! Hasta la próxima."
+
+[stt]
+model = "flux-general-multi"
+language_hints = ["en", "es"]
+
+[llm]
+# Pipecat quickstart default.
+model = "gpt-4.1"
+
+# Exactly one TTS provider is active. Alternatives to try (see docs/tts-providers.md):
+#
+#   provider = "deepgram"
+#   voice = "aura-2-selena-es"
+#
+#   provider = "elevenlabs"
+#   model = "eleven_flash_v2_5"
+#   voice = "<voice-id>"
+[tts]
+provider = "cartesia"
+model = "sonic-3.6"
+# Daniela - Relaxed Woman (Mexican Spanish).
+voice = "5c5ad5e7-1020-476b-8b91-fdcbe9cc313c"
+language = "es-MX"

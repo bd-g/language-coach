@@ -1,14 +1,18 @@
-# Rust build artifacts
-/target/
+# Python
+__pycache__/
+/.venv/
+/.pytest_cache/
+/.ruff_cache/
 
 # Nix/direnv local environment
 /.direnv/
+/result
+/result-*
 
-# Local secrets and machine-specific config
+# Local secrets
 /.env
 /.env.*
-/*.local.toml
-/config/production.toml
+!/.env.example
 
 # Runtime and debug output
 /*.log

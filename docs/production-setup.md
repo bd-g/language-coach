@@ -1,110 +1,71 @@
 # Production Setup
 
-This is the short Fly.io and Telnyx runbook for the in-between server. It follows the implementation plan: one always-on Fly machine, public Telnyx webhooks/media WebSockets on port `8080`, internal Fly metrics on port `9091`, and production config mounted from a Fly secret.
+The coach runs as one Pipecat Cloud agent (`language-coach`, region `us-east`, scale to zero, at most 3 concurrent sessions). A Daily phone number on Pipecat Cloud's managed dial-in webhook starts a session for each call. The Pipecat GitHub integration deploys `main`.
 
-## Prerequisites
+Run every command below from `nix-shell` in the repository root.
 
-- Install `flyctl` and log in with `fly auth login`.
-- Have a Telnyx account with a purchased US local DID.
-- Have a Deepgram API key.
-- Choose the Fly app name. The checked-in default is `language-coach`; override commands with `FLY_APP=<name>` if needed.
+## One-time setup
 
-## Production Config
+1. Log in:
 
-Create `config/production.toml`. Do not commit it.
+   ```bash
+   pipecat cloud auth login
+   ```
 
-```toml
-public_base_url = "https://language-coach.brentdgeorge.com"
-telnyx_public_key = "<Telnyx Ed25519 public key>"
-allowlist_numbers = ["+15551234567"]
-```
+2. Create the secret set. Copy `.env.example` to a local `.env`, fill in real keys and the allowlisted numbers, then:
 
-The rest of the server settings use validated defaults or can be copied from `config/server.example.toml` when you need overrides.
+   ```bash
+   pipecat cloud secrets set language-coach-secrets --file .env
+   ```
 
-## Fly.io Setup
+   Only the key for the TTS provider selected in `config/bot.toml` is required. `ALLOWED_CALLERS` is a comma-separated list of E.164 numbers; every other caller is disconnected as soon as the call connects.
 
-Create the app and certificate once:
+3. Set a spend limit for the organization:
 
-```bash
-fly apps create language-coach
-fly certs add language-coach.brentdgeorge.com -a language-coach
-```
+   ```bash
+   pipecat cloud spend-limit set 20
+   ```
 
-Set DNS for the custom domain:
+4. Create the agent with a first cloud build:
 
-```text
-Type:  CNAME
-Name:  language-coach
-Value: language-coach.fly.dev.
-TTL:   300
-```
+   ```bash
+   pipecat cloud deploy
+   ```
 
-Set runtime secrets once:
+5. Connect GitHub and link the agent to `main`, so merges deploy automatically:
 
-```bash
-fly secrets set \
-  TELNYX_API_KEY="<telnyx-api-key>" \
-  DEEPGRAM_API_KEY="<deepgram-api-key>" \
-  DIRECT_ACCESS_TOKEN="$(openssl rand -hex 32)" \
-  -a language-coach
-```
+   ```bash
+   pipecat cloud github connect
+   pipecat cloud project link language-coach --repo bd-g/language-coach --branch main
+   ```
 
-Deploy, including the mounted production config secret:
+6. Protect `main` on GitHub (Settings → Rules → Rulesets, or Branches):
+   - Require a pull request before merging.
+   - Require the `python` status check from the Checks workflow to pass.
+   - Do not allow bypassing, including for administrators, because every change to `main` is deployed.
 
-```bash
-scripts/deploy-fly.sh
-```
+7. Buy a phone number in the Pipecat Cloud dashboard under **Settings → Telephony**, then assign it to the `language-coach` agent. This uses the managed dial-in webhook, so there is no webhook server to host.
 
-For a non-default app or health URL:
+## Changing secrets
 
-```bash
-FLY_APP=my-app FLY_HEALTH_URL=https://language-coach.brentdgeorge.com scripts/deploy-fly.sh
-```
-
-## Telnyx Setup
-
-In Telnyx Mission Control:
-
-- Create a Call Control application.
-- Set the webhook URL to `https://language-coach.brentdgeorge.com/telnyx/webhook`.
-- Use Webhook API Version `V2 EdDSA signatures`.
-- Copy the Ed25519 public key into `telnyx_public_key` in `config/production.toml`.
-- Assign the purchased DID to the Call Control application.
-- Enable inbound call screening for spam and robocall rejection.
-- Add the caller phone numbers allowed to use the coach to `allowlist_numbers` in E.164 format.
-
-After changing `config/production.toml`, rerun `scripts/deploy-fly.sh` so Fly receives the updated `SERVER_CONFIG_TOML` secret and redeploys the server.
-
-## Automated Main-Branch Deploys
-
-The GitHub workflow deploys to Fly after checks pass on `main`. Add this GitHub Actions secret:
-
-```text
-FLY_API_TOKEN
-```
-
-Create it with:
-
-```bash
-fly tokens create deploy -a language-coach
-```
-
-The workflow assumes the Fly app already has `TELNYX_API_KEY`, `DEEPGRAM_API_KEY`, `DIRECT_ACCESS_TOKEN`, and `SERVER_CONFIG_TOML` set. Use `scripts/deploy-fly.sh` locally whenever you rotate secrets or change `config/production.toml`.
+Re-run `pipecat cloud secrets set language-coach-secrets --file .env`. A secret change alone does not create a new agent version. Run `pipecat cloud deploy --force` so running instances pick it up.
 
 ## Verification
 
-Check deployment health:
+- Browser session against the deployed agent, without the phone:
 
-```bash
-curl --fail https://language-coach.brentdgeorge.com/healthz
-curl --fail https://language-coach.brentdgeorge.com/readyz
-```
+  ```bash
+  pipecat cloud agent start language-coach --use-daily
+  ```
 
-Check the deployed debug path without Telnyx:
+  Open the printed Daily room URL and talk to the coach.
 
-```bash
-export DIRECT_ACCESS_TOKEN="<deployed-direct-access-token>"
-cargo run -p language-coach-debug-client -- \
-  --config debug-client.local.toml \
-  --url wss://language-coach.brentdgeorge.com/dev/connect
-```
+- Phone: call the Daily number from an allowlisted phone. Then call from a number that is not on the list and confirm the call disconnects right away.
+
+- Logs:
+
+  ```bash
+  pipecat cloud agent logs language-coach
+  ```
+
+  Each session ends with a line such as `session ended after 412s; tts=cartesia tts_characters=...`. Rejected callers appear as `rejecting caller …1234: not allowlisted`.

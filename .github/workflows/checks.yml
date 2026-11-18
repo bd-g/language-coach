@@ -1,12 +1,18 @@
 name: Checks
 
+# Required status check for pull requests into main. Deploys are done by the
+# Pipecat Cloud GitHub integration when main changes, so main must only change
+# through pull requests that pass this workflow.
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
 
 jobs:
-  rust:
+  python:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -15,29 +21,17 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
+      - name: Check uv.lock matches pyproject.toml
+        run: nix-shell --run 'uv lock --check'
+
       - name: Check formatting
-        run: nix-shell --run 'cargo fmt --check'
+        run: nix-shell --run 'ruff format --check .'
 
-      - name: Run clippy
-        run: nix-shell --run 'cargo clippy --all-targets'
+      - name: Lint
+        run: nix-shell --run 'ruff check .'
 
-      - name: Run tests
-        run: nix-shell --run 'cargo test --workspace'
+      - name: Type check
+        run: nix-shell --run 'pyright'
 
-  deploy:
-    runs-on: ubuntu-latest
-    needs: rust
-    if: github.ref == 'refs/heads/main'
-    env:
-      FLY_APP: ${{ vars.FLY_APP || 'language-coach' }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Deploy to Fly
-        run: fly deploy --remote-only -a "${FLY_APP}"
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: Test
+        run: nix-shell --run 'pytest'
