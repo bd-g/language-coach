@@ -19,7 +19,7 @@ Run every command below from `nix-shell` in the repository root.
    pipecat cloud secrets list --region us-east
    ```
 
-   Every line in `.env` needs a value; comment out keys you don't use, or the command fails with "Empty key or value found". The secret set must exist in the agent's region (`us-east`) before `pipecat cloud deploy`, or the deploy fails with "Secret set 'language-coach-secrets' not found". Only the key for the TTS provider selected in `config/bot.toml` is required. `ALLOWED_CALLERS` is a comma-separated list of E.164 numbers; every other caller is disconnected as soon as the call connects.
+   Memory needs `MEM0_API_KEY`: create a Mem0 account at https://app.mem0.ai and copy an API key from the dashboard. Every line in `.env` needs a value; comment out keys you don't use, or the command fails with "Empty key or value found". The secret set must exist in the agent's region (`us-east`) before `pipecat cloud deploy`, or the deploy fails with "Secret set 'language-coach-secrets' not found". Only the key for the TTS provider selected in `config/bot.toml` is required. `ALLOWED_CALLERS` is a comma-separated list of E.164 numbers; every other caller is disconnected as soon as the call connects.
 
 3. Set a spend limit for the organization:
 

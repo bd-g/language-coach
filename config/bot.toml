@@ -7,6 +7,11 @@ time_limit_message = "Ya llegamos al límite de tiempo. We've reached the time l
 # Spoken before ending when the speech-to-text or LLM provider fails.
 failure_message = "Lo siento, algo salió mal. Sorry, something went wrong. Por favor intenta de nuevo más tarde."
 
+# Long-term memory per phone caller and practice language, stored in Mem0.
+[memory]
+enabled = true
+timeout_seconds = 10.0
+
 [stt]
 model = "flux-general-multi"
 language_hints = ["en", "es"]

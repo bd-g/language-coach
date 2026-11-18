@@ -22,6 +22,7 @@ from pipecat.workers.runner import WorkerRunner
 from language_coach.admission import rejection_reason
 from language_coach.config import AppConfig, Runtime, SessionConfig
 from language_coach.failures import Provider, ProviderFailureMonitor
+from language_coach.memory import LearnerMemoryStore, SessionMemory, conversation_for_memory
 from language_coach.origin import (
     DailyRoomSession,
     PhoneCall,
@@ -59,7 +60,9 @@ _PHONE_AUDIO = _Audio(PHONE_SAMPLE_RATE, PHONE_SAMPLE_RATE)
 _BROWSER_AUDIO = _Audio(None, None)
 
 
-async def run_session(args: RunnerArguments, config: AppConfig) -> None:
+async def run_session(
+    args: RunnerArguments, config: AppConfig, memory_store: LearnerMemoryStore | None
+) -> None:
     """Entry point for one session started by the Pipecat runner."""
     origin = parse_origin(args)
     reason = rejection_reason(origin, config.secrets.allowlist)
@@ -69,7 +72,14 @@ async def run_session(args: RunnerArguments, config: AppConfig) -> None:
         return
     caller = origin.caller if isinstance(origin, PhoneCall) else "n/a"
     logger.info(f"starting {type(origin).__name__} session; caller {caller}")
-    await _coach(origin, args.handle_sigint, config)
+    memory = (
+        SessionMemory(
+            memory_store, origin.caller, timeout_seconds=config.bot.memory.timeout_seconds
+        )
+        if memory_store is not None and isinstance(origin, PhoneCall) and origin.caller
+        else None
+    )
+    await _coach(origin, args.handle_sigint, config, memory)
 
 
 async def _reject(call: PhoneCall, handle_sigint: bool) -> None:
@@ -99,7 +109,12 @@ async def _reject(call: PhoneCall, handle_sigint: bool) -> None:
     await runner.run()
 
 
-async def _coach(origin: SessionOrigin, handle_sigint: bool, config: AppConfig) -> None:
+async def _coach(
+    origin: SessionOrigin,
+    handle_sigint: bool,
+    config: AppConfig,
+    memory: SessionMemory | None,
+) -> None:
     transport, audio = _transport(origin, config.runtime)
     secrets = config.secrets
     bot = config.bot
@@ -119,7 +134,7 @@ async def _coach(origin: SessionOrigin, handle_sigint: bool, config: AppConfig) 
     tts = build_tts(bot.tts, secrets.tts_api_key.get_secret_value())
 
     practice = PracticeChoice()
-    context = LLMContext(tools=list(coach_tools(bot.tts, practice)))
+    context = LLMContext(tools=list(coach_tools(bot.tts, practice, memory)))
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(context)
 
     usage = UsageObserver()
@@ -179,6 +194,12 @@ async def _coach(origin: SessionOrigin, handle_sigint: bool, config: AppConfig) 
     finally:
         for task in started:
             task.cancel()
+        # Runs after hang-ups too: the runner returns once the client disconnects, and
+        # Pipecat Cloud keeps the session alive until bot() returns.
+        if memory is not None and practice.language is not None:
+            await memory.remember(
+                practice.language, conversation_for_memory(context.get_messages())
+            )
         summary = usage.summary()
         logger.info(
             f"session ended after {time.monotonic() - started_at:.0f}s; "

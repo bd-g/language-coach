@@ -8,7 +8,15 @@ from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
 from pipecat.transcriptions.language import Language
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt, SecretStr, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveFloat,
+    PositiveInt,
+    SecretStr,
+    ValidationError,
+)
 
 from language_coach.caller import Allowlist, InvalidPhoneNumberError
 
@@ -38,6 +46,13 @@ class SessionConfig(_Strict):
     max_duration_seconds: PositiveInt
     time_limit_message: str = Field(min_length=1)
     failure_message: str = Field(min_length=1)
+
+
+class MemoryConfig(_Strict):
+    """Per-learner long-term memory in Mem0 (phone callers only)."""
+
+    enabled: bool
+    timeout_seconds: PositiveFloat
 
 
 class SttConfig(_Strict):
@@ -91,6 +106,7 @@ class BotConfig(_Strict):
     """Contents of `config/bot.toml`."""
 
     session: SessionConfig
+    memory: MemoryConfig
     stt: SttConfig
     llm: LlmConfig
     tts: Annotated[CartesiaTts | DeepgramTts | ElevenLabsTts, Field(discriminator="provider")]
@@ -103,6 +119,7 @@ class Secrets:
     deepgram_api_key: SecretStr
     openai_api_key: SecretStr
     tts_api_key: SecretStr
+    mem0_api_key: SecretStr | None
     allowlist: Allowlist
 
 
@@ -130,15 +147,17 @@ def load_app_config(
 
     return AppConfig(
         bot=bot,
-        secrets=_load_secrets(env, bot.tts),
+        secrets=_load_secrets(env, bot),
         system_prompt=_read_prompt("system_prompt.md"),
         greeting=_read_prompt("greeting.txt"),
         runtime=runtime,
     )
 
 
-def _load_secrets(env: Mapping[str, str], tts: TtsConfig) -> Secrets:
-    names = ("DEEPGRAM_API_KEY", "OPENAI_API_KEY", tts.api_key_env, "ALLOWED_CALLERS")
+def _load_secrets(env: Mapping[str, str], bot: BotConfig) -> Secrets:
+    names = ["DEEPGRAM_API_KEY", "OPENAI_API_KEY", bot.tts.api_key_env, "ALLOWED_CALLERS"]
+    if bot.memory.enabled:
+        names.append("MEM0_API_KEY")
     values = {name: env.get(name, "").strip() for name in names}
     missing = sorted({name for name, value in values.items() if not value})
     if missing:
@@ -152,7 +171,8 @@ def _load_secrets(env: Mapping[str, str], tts: TtsConfig) -> Secrets:
     return Secrets(
         deepgram_api_key=SecretStr(values["DEEPGRAM_API_KEY"]),
         openai_api_key=SecretStr(values["OPENAI_API_KEY"]),
-        tts_api_key=SecretStr(values[tts.api_key_env]),
+        tts_api_key=SecretStr(values[bot.tts.api_key_env]),
+        mem0_api_key=SecretStr(values["MEM0_API_KEY"]) if bot.memory.enabled else None,
         allowlist=allowlist,
     )
 

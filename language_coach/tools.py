@@ -17,6 +17,7 @@ from pipecat.services.llm_service import FunctionCallParams
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from language_coach.config import TtsConfig
+from language_coach.memory import SessionMemory, memories_for_prompt
 from language_coach.practice import PracticeChoice, PracticeLanguage
 from language_coach.tts import SpeakingRate, practice_language_update, speed_update
 
@@ -28,6 +29,32 @@ class EndCallReason(StrEnum):
     GOODBYE = "goodbye"
     SCENARIO_COMPLETE = "scenario_complete"
     OTHER = "other"
+
+
+async def _practice_language_result(
+    language: PracticeLanguage, memory: SessionMemory | None
+) -> dict[str, object]:
+    instruction = (
+        f"The learner is practicing {language.value}. Follow the rules for that direction. "
+        "Confirm the choice in one short sentence in the learner's native language"
+    )
+    if memory is None:
+        return {"practice_language": language.value, "instruction": f"{instruction}, then start."}
+
+    records = await memory.recall(language)
+    if records:
+        instruction += (
+            ". This is a returning learner: in the same breath, mention one specific thing "
+            "you remember from earlier calls, then start. Use learner_memory as described in "
+            "your instructions about memory."
+        )
+    else:
+        instruction += ". This is the learner's first session in this language, then start."
+    return {
+        "practice_language": language.value,
+        "learner_memory": memories_for_prompt(records),
+        "instruction": instruction,
+    }
 
 
 class SetSpeakingRateArgs(BaseModel):
@@ -55,8 +82,13 @@ class EndCallArgs(BaseModel):
     reason: EndCallReason
 
 
-def coach_tools(tts: TtsConfig, choice: PracticeChoice) -> list[FunctionSchema]:
-    """Tool schemas with handlers bound to the session's TTS provider and practice choice."""
+def coach_tools(
+    tts: TtsConfig, choice: PracticeChoice, memory: SessionMemory | None
+) -> list[FunctionSchema]:
+    """Tool schemas with handlers bound to the session's TTS, practice choice, and memory.
+
+    `memory` is `None` for sessions without a known learner (browser sessions).
+    """
 
     async def choose_practice_language(params: FunctionCallParams) -> None:
         try:
@@ -72,16 +104,7 @@ def coach_tools(tts: TtsConfig, choice: PracticeChoice) -> list[FunctionSchema]:
         if delta is not None:
             await params.llm.push_frame(TTSUpdateSettingsFrame(delta=delta))
         logger.info(f"practice language: {previous} -> {language}")
-        await params.result_callback(
-            {
-                "practice_language": language.value,
-                "instruction": (
-                    f"The learner is practicing {language.value}. Follow the rules for that "
-                    "direction. Confirm the choice in one short sentence in the learner's "
-                    "native language, then start choosing a scenario."
-                ),
-            }
-        )
+        await params.result_callback(await _practice_language_result(language, memory))
 
     async def set_speaking_rate(params: FunctionCallParams) -> None:
         try:

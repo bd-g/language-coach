@@ -7,7 +7,9 @@ from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.llm_service import FunctionCallParams
 
+from language_coach.caller import CallerNumber
 from language_coach.config import CartesiaTts, DeepgramTts, ElevenLabsTts
+from language_coach.memory import LearnerId, MemoryRecord, SessionMemory
 from language_coach.practice import PracticeChoice, PracticeLanguage
 from language_coach.tools import coach_tools
 from language_coach.tts import practice_language_update
@@ -59,8 +61,10 @@ class FakeParams:
         self.results.append(result)
 
 
-async def call_choose(arguments: dict[str, Any], choice: PracticeChoice) -> FakeParams:
-    tools = {tool.name: tool for tool in coach_tools(CARTESIA, choice)}
+async def call_choose(
+    arguments: dict[str, Any], choice: PracticeChoice, memory: SessionMemory | None = None
+) -> FakeParams:
+    tools = {tool.name: tool for tool in coach_tools(CARTESIA, choice, memory)}
     handler = tools["choose_practice_language"].handler
     assert handler is not None
     params = FakeParams(arguments)
@@ -99,7 +103,49 @@ async def test_invalid_language_is_rejected_without_changing_state() -> None:
 
 
 def test_tool_schema_lists_both_languages() -> None:
-    tools = {tool.name: tool for tool in coach_tools(DEEPGRAM, PracticeChoice())}
+    tools = {tool.name: tool for tool in coach_tools(DEEPGRAM, PracticeChoice(), None)}
 
     language = tools["choose_practice_language"].properties["language"]
     assert language["enum"] == ["english", "spanish"]
+
+
+@dataclass
+class RecallStore:
+    records: list[MemoryRecord]
+    recalled: list[LearnerId] = field(default_factory=list[LearnerId])
+
+    async def recall(self, learner: LearnerId) -> list[MemoryRecord]:
+        self.recalled.append(learner)
+        return self.records
+
+    async def remember(self, learner: LearnerId, language: PracticeLanguage, conversation: Any):
+        raise AssertionError("not expected during the call")
+
+
+CALLER = CallerNumber.parse("+15551234567")
+
+
+async def test_returning_learner_gets_memories_for_the_chosen_language() -> None:
+    store = RecallStore([MemoryRecord(memory="Confuses ser and estar")])
+    memory = SessionMemory(store, CALLER, timeout_seconds=1.0)
+
+    params = await call_choose({"language": "spanish"}, PracticeChoice(), memory)
+
+    assert store.recalled == [LearnerId.for_caller(CALLER, PracticeLanguage.SPANISH)]
+    assert params.results[0]["learner_memory"] == ["Confuses ser and estar"]
+    assert "returning learner" in params.results[0]["instruction"]
+
+
+async def test_new_learner_is_told_this_is_a_first_session() -> None:
+    memory = SessionMemory(RecallStore([]), CALLER, timeout_seconds=1.0)
+
+    params = await call_choose({"language": "english"}, PracticeChoice(), memory)
+
+    assert params.results[0]["learner_memory"] == []
+    assert "first session" in params.results[0]["instruction"]
+
+
+async def test_sessions_without_memory_do_not_mention_it() -> None:
+    params = await call_choose({"language": "english"}, PracticeChoice())
+
+    assert "learner_memory" not in params.results[0]

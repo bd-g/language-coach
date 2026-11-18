@@ -9,7 +9,7 @@
 - Use concise docstrings on public classes and functions that model data flow or provider behavior. Avoid obvious comments in function bodies.
 - Keep an explicit running list of unresolved user questions in `QUESTIONS.md` during implementation. Update it as you discover uncertainties, then present that list at the end of a working phase.
 - Incorporate user code review feedback into both code changes and this file when the feedback describes a durable engineering preference.
-- Keep entrypoints small: `bot.py` only loads config and delegates to `language_coach/`. Group concerns into named modules (`config.py`, `origin.py`, `session.py`, `tools.py`, `tts.py`) rather than growing one file.
+- Keep entrypoints small: `bot.py` only loads config and delegates to `language_coach/`. Group concerns into named modules (`config.py`, `origin.py`, `session.py`, `tools.py`, `tts.py`, `memory.py`) rather than growing one file.
 - Minimize per-call cost. Prefer providers and settings that keep TTS characters, LLM tokens, and agent minutes low, and never start AI services for sessions that will be rejected.
 
 ## Typing
@@ -22,7 +22,8 @@
 
 ## Boundaries And Parsing
 
-- Parse at the edges, trust inside: `config/bot.toml` and the environment go through `config.py`; runner arguments and Daily dial-in bodies go through `origin.py`; LLM tool arguments go through pydantic models in `tools.py`.
+- Parse at the edges, trust inside: `config/bot.toml` and the environment go through `config.py`; runner arguments and Daily dial-in bodies go through `origin.py`; LLM tool arguments go through pydantic models in `tools.py`; Mem0 responses and LLM context messages go through pydantic models in `memory.py`.
+- External services used inside a call (such as Mem0) sit behind a small `Protocol`, have a timeout, and degrade to "no memory" instead of failing the call.
 - Our own config models use `extra="forbid"`. Provider payloads tolerate unknown additive fields but must validate required fields.
 - Startup fails fast on invalid config or missing secrets. Error messages name settings and fields, never secret values or phone numbers.
 - Tool schemas are explicit `FunctionSchema`s with JSON-schema constraints (`minimum`, `maximum`, `enum`). Handlers validate `params.arguments` into a pydantic model and return a safe error result on invalid input. Do not rely on direct-function signature inference for constrained arguments.
@@ -39,7 +40,9 @@
 
 ## Privacy And Logging
 
-- Log callers only as `CallerNumber` (which renders as the last four digits). Never log full phone numbers, API keys, transcripts, or audio.
+- Log callers only as `CallerNumber` or `LearnerId` (both render as the last four digits). Never log full phone numbers, API keys, transcripts, or audio.
+- Learner memory is the one place full numbers and conversation content leave the bot: Mem0 user ids contain the E.164 number, and the session's spoken turns are sent to Mem0 once at session end. This is a deliberate user choice; do not add other stores of transcripts or numbers.
+- Keep memory to one recall per session (on practice-language choice) and one save (at session end). Do not use Pipecat's per-turn `Mem0MemoryService`; it adds latency and per-turn extraction cost.
 - Log tool outcomes as categories (`EndCallReason`, numeric speed), not free-text arguments.
 - Log per-session usage (TTS characters, LLM tokens, duration, TTS provider) at session end so provider costs can be compared.
 

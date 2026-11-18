@@ -31,7 +31,7 @@ def test_unknown_end_call_reason_is_rejected() -> None:
 def test_coach_tools_expose_constrained_schemas() -> None:
     tools = {
         tool.name: tool
-        for tool in coach_tools(DeepgramTts(provider="deepgram", voice="v"), PracticeChoice())
+        for tool in coach_tools(DeepgramTts(provider="deepgram", voice="v"), PracticeChoice(), None)
     }
 
     assert set(tools) == {"choose_practice_language", "set_speaking_rate", "end_call"}

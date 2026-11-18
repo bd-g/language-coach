@@ -17,6 +17,7 @@ ENV = {
     "OPENAI_API_KEY": "openai-key",
     "CARTESIA_API_KEY": "cartesia-key",
     "ALLOWED_CALLERS": "+15551234567",
+    "MEM0_API_KEY": "mem0-key",
 }
 
 MINIMAL_TOML = """
@@ -24,6 +25,10 @@ MINIMAL_TOML = """
 max_duration_seconds = 60
 time_limit_message = "Se acabó el tiempo."
 failure_message = "Algo salió mal."
+
+[memory]
+enabled = {memory_enabled}
+timeout_seconds = 5.0
 
 [stt]
 model = "flux-general-multi"
@@ -39,9 +44,10 @@ model = "gpt-4.1"
 CARTESIA = 'provider = "cartesia"\nmodel = "sonic-3.6"\nvoice = "voice-id"\nlanguage = "es-MX"'
 
 
-def write_config(tmp_path: Path, tts: str = CARTESIA) -> Path:
+def write_config(tmp_path: Path, tts: str = CARTESIA, memory_enabled: bool = True) -> Path:
     path = tmp_path / "bot.toml"
-    path.write_text(MINIMAL_TOML.format(tts=tts), encoding="utf-8")
+    toml = MINIMAL_TOML.format(tts=tts, memory_enabled=str(memory_enabled).lower())
+    path.write_text(toml, encoding="utf-8")
     return path
 
 
@@ -137,3 +143,18 @@ def test_zero_max_duration_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError):
         load_app_config(ENV, path)
+
+
+def test_mem0_key_is_required_when_memory_is_enabled(tmp_path: Path) -> None:
+    env = {k: v for k, v in ENV.items() if k != "MEM0_API_KEY"}
+
+    with pytest.raises(ConfigError, match="MEM0_API_KEY"):
+        load_app_config(env, write_config(tmp_path))
+
+
+def test_mem0_key_is_optional_when_memory_is_disabled(tmp_path: Path) -> None:
+    env = {k: v for k, v in ENV.items() if k != "MEM0_API_KEY"}
+
+    config = load_app_config(env, write_config(tmp_path, memory_enabled=False))
+
+    assert config.secrets.mem0_api_key is None

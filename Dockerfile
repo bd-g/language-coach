@@ -4,6 +4,8 @@ ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 # Keep transcripts and tool arguments out of what Pipecat Cloud publishes.
 ENV PCC_WITHHOLD_CONTENT=true
+# Turn off the mem0ai SDK's usage telemetry.
+ENV MEM0_TELEMETRY=False
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \

@@ -10,6 +10,7 @@ dependencies = [
     # string, which pipecat-ai 1.16's Daily transport sends to pinlessCallUpdate as-is.
     # Lift once pipecat-ai handles the new payload.
     "daily-python>=0.36,<0.37",
+    "mem0ai>=2,<3",
     "pydantic>=2.11,<3",
 ]
 
