@@ -3,6 +3,8 @@ name = "language-coach"
 version = "0.1.0"
 description = "Bilingual English/Spanish conversation coach, as a Pipecat voice bot"
 requires-python = ">=3.13,<3.14"
+license = "BSD-2-Clause"
+license-files = ["LICENSE"]
 dependencies = [
     "pipecat-ai[cartesia,daily,deepgram,elevenlabs,openai,runner,webrtc]==1.16.0",
     "pipecatcloud>=1.3.0",
