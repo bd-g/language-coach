@@ -34,8 +34,13 @@ def test_coach_tools_expose_constrained_schemas() -> None:
         for tool in coach_tools(DeepgramTts(provider="deepgram", voice="v"), PracticeChoice(), None)
     }
 
-    assert set(tools) == {"choose_practice_language", "set_speaking_rate", "end_call"}
+    assert set(tools) == {
+        "choose_practice_language",
+        "choose_level",
+        "set_speaking_rate",
+        "end_call",
+    }
     speed = tools["set_speaking_rate"].properties["speed"]
-    assert (speed["minimum"], speed["maximum"]) == (0.7, 1.3)
+    assert (speed["minimum"], speed["maximum"]) == (0.6, 1.3)
     assert tools["end_call"].properties["reason"]["enum"] == [r.value for r in EndCallReason]
     assert all(tool.handler is not None for tool in tools.values())

@@ -9,8 +9,8 @@ from pipecat.services.llm_service import FunctionCallParams
 
 from language_coach.caller import CallerNumber
 from language_coach.config import CartesiaTts, DeepgramTts, ElevenLabsTts
-from language_coach.memory import LearnerId, MemoryRecord, SessionMemory
-from language_coach.practice import PracticeChoice, PracticeLanguage
+from language_coach.memory import LearnerId, MemoryRecord, RecordMetadata, SessionMemory
+from language_coach.practice import PracticeChoice, PracticeLanguage, PracticeLevel
 from language_coach.tools import coach_tools
 from language_coach.tts import practice_language_update
 
@@ -121,6 +121,9 @@ class RecallStore:
     async def remember(self, learner: LearnerId, language: PracticeLanguage, conversation: Any):
         raise AssertionError("not expected during the call")
 
+    async def remember_level(self, learner: LearnerId, level: PracticeLevel) -> None:
+        raise AssertionError("not expected during the call")
+
 
 CALLER = CallerNumber.parse("+15551234567")
 
@@ -149,3 +152,96 @@ async def test_sessions_without_memory_do_not_mention_it() -> None:
     params = await call_choose({"language": "english"}, PracticeChoice())
 
     assert "learner_memory" not in params.results[0]
+
+
+async def call_level(arguments: dict[str, Any], choice: PracticeChoice) -> FakeParams:
+    tools = {tool.name: tool for tool in coach_tools(CARTESIA, choice, None)}
+    handler = tools["choose_level"].handler
+    assert handler is not None
+    params = FakeParams(arguments)
+    await handler(cast(FunctionCallParams, params))
+    return params
+
+
+@pytest.mark.parametrize(
+    ("level", "speed"),
+    [
+        (PracticeLevel.BEGINNER, 0.6),
+        (PracticeLevel.INTERMEDIATE, 0.8),
+        (PracticeLevel.ADVANCED, 1.0),
+    ],
+)
+async def test_choosing_a_level_records_it_and_sets_its_speed(
+    level: PracticeLevel, speed: float
+) -> None:
+    choice = PracticeChoice()
+
+    params = await call_level({"level": level.value}, choice)
+
+    assert choice.level is level
+    [frame] = params.llm.pushed
+    assert isinstance(frame, TTSUpdateSettingsFrame)
+    assert isinstance(frame.delta, CartesiaTTSService.Settings)
+    assert getattr(frame.delta.generation_config, "speed", None) == pytest.approx(speed)
+    assert params.results[0]["level"] == level.value
+
+
+async def test_invalid_level_is_rejected_without_changing_state() -> None:
+    choice = PracticeChoice()
+
+    params = await call_level({"level": "expert"}, choice)
+
+    assert choice.level is None
+    assert params.llm.pushed == []
+    assert "error" in params.results[0]
+
+
+def test_level_schema_lists_all_levels() -> None:
+    tools = {tool.name: tool for tool in coach_tools(DEEPGRAM, PracticeChoice(), None)}
+
+    level = tools["choose_level"].properties["level"]
+    assert level["enum"] == ["beginner", "intermediate", "advanced"]
+
+
+async def test_choosing_a_language_asks_for_a_level_next() -> None:
+    params = await call_choose({"language": "spanish"}, PracticeChoice())
+
+    assert "level" in params.results[0]["instruction"]
+
+
+LEVEL_RECORD = MemoryRecord(
+    memory="Practice level: beginner",
+    metadata=RecordMetadata(kind="practice_level", level=PracticeLevel.BEGINNER),
+)
+
+
+async def test_returning_learner_with_a_recorded_level_skips_the_level_question() -> None:
+    store = RecallStore([MemoryRecord(memory="Ordered tacos"), LEVEL_RECORD])
+    memory = SessionMemory(store, CALLER, timeout_seconds=1.0, recall_wait_seconds=1.0)
+    choice = PracticeChoice()
+
+    params = await call_choose({"language": "spanish"}, choice, memory)
+
+    assert choice.level is PracticeLevel.BEGINNER
+    speeds = [
+        getattr(frame.delta.generation_config, "speed", None)
+        for frame in params.llm.pushed
+        if isinstance(frame, TTSUpdateSettingsFrame)
+        and isinstance(frame.delta, CartesiaTTSService.Settings)
+    ]
+    assert speeds[-1] == pytest.approx(0.6)
+    result = params.results[0]
+    assert result["level"] == "beginner"
+    assert "ask which level" not in result["instruction"]
+    assert result["learner_memory"] == ["Ordered tacos"]
+
+
+async def test_returning_learner_without_a_recorded_level_is_asked_once() -> None:
+    store = RecallStore([MemoryRecord(memory="The learner seems intermediate")])
+    memory = SessionMemory(store, CALLER, timeout_seconds=1.0, recall_wait_seconds=1.0)
+    choice = PracticeChoice()
+
+    params = await call_choose({"language": "spanish"}, choice, memory)
+
+    assert choice.level is None
+    assert "ask which level" in params.results[0]["instruction"]

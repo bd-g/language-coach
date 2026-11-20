@@ -1,4 +1,4 @@
-"""LLM tools: speaking-rate control and ending the call.
+"""LLM tools: practice language and level, speaking-rate control, and ending the call.
 
 Tool arguments come from the LLM, so handlers parse them into typed models
 before acting and return a safe error result when parsing fails.
@@ -17,8 +17,13 @@ from pipecat.services.llm_service import FunctionCallParams
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from language_coach.config import TtsConfig
-from language_coach.memory import SessionMemory, memories_for_prompt
-from language_coach.practice import PracticeChoice, PracticeLanguage
+from language_coach.memory import (
+    MemoryRecord,
+    SessionMemory,
+    memories_for_prompt,
+    remembered_level,
+)
+from language_coach.practice import PracticeChoice, PracticeLanguage, PracticeLevel
 from language_coach.tts import SpeakingRate, practice_language_update, speed_update
 
 
@@ -31,30 +36,44 @@ class EndCallReason(StrEnum):
     OTHER = "other"
 
 
-async def _practice_language_result(
-    language: PracticeLanguage, memory: SessionMemory | None
+def _practice_language_result(
+    language: PracticeLanguage, records: list[MemoryRecord] | None, level: PracticeLevel | None
 ) -> dict[str, object]:
+    """Tool result for a language choice. `records` is `None` for sessions without memory."""
     instruction = (
         f"The learner is practicing {language.value}. Follow the rules for that direction. "
         "Confirm the choice in one short sentence in the learner's native language"
     )
-    if memory is None:
-        return {"practice_language": language.value, "instruction": f"{instruction}, then start."}
+    if level is None:
+        next_step = "ask which level they want: beginner, intermediate, or advanced"
+    else:
+        next_step = (
+            f"say in a few words that you will continue at their {level.value} level from "
+            "earlier calls, which they can change anytime, then ask what situation they want "
+            f"to practice. Follow the rules for the {level.value} level"
+        )
+    if records is None:
+        return {
+            "practice_language": language.value,
+            "instruction": f"{instruction}, then {next_step}.",
+        }
 
-    records = await memory.recalled(language)
     if records:
         instruction += (
             ". This is a returning learner: in the same breath, mention one specific thing "
-            "you remember from earlier calls, then start. Use learner_memory as described in "
-            "your instructions about memory."
+            f"you remember from earlier calls, then {next_step}. Use learner_memory as "
+            "described in your instructions about memory."
         )
     else:
-        instruction += ". This is the learner's first session in this language, then start."
-    return {
+        instruction += f". This is the learner's first session in this language, then {next_step}."
+    result: dict[str, object] = {
         "practice_language": language.value,
         "learner_memory": memories_for_prompt(records),
         "instruction": instruction,
     }
+    if level is not None:
+        result["level"] = level.value
+    return result
 
 
 class SetSpeakingRateArgs(BaseModel):
@@ -74,6 +93,14 @@ class ChoosePracticeLanguageArgs(BaseModel):
     language: PracticeLanguage
 
 
+class ChooseLevelArgs(BaseModel):
+    """Arguments for `choose_level`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    level: PracticeLevel
+
+
 class EndCallArgs(BaseModel):
     """Arguments for `end_call`."""
 
@@ -90,6 +117,14 @@ def coach_tools(
     `memory` is `None` for sessions without a known learner (browser sessions).
     """
 
+    async def apply_level(params: FunctionCallParams, level: PracticeLevel) -> SpeakingRate:
+        previous = choice.level_label()
+        choice.level = level
+        rate = SpeakingRate.for_level(level)
+        await params.llm.push_frame(TTSUpdateSettingsFrame(delta=speed_update(tts, rate)))
+        logger.info(f"level: {previous} -> {level}; speaking rate {rate.value:.2f}")
+        return rate
+
     async def choose_practice_language(params: FunctionCallParams) -> None:
         try:
             language = ChoosePracticeLanguageArgs.model_validate(params.arguments).language
@@ -104,7 +139,34 @@ def coach_tools(
         if delta is not None:
             await params.llm.push_frame(TTSUpdateSettingsFrame(delta=delta))
         logger.info(f"practice language: {previous} -> {language}")
-        await params.result_callback(await _practice_language_result(language, memory))
+        records = await memory.recalled(language) if memory is not None else None
+        level = remembered_level(records) if records else None
+        if level is not None:
+            await apply_level(params, level)
+        await params.result_callback(_practice_language_result(language, records, level))
+
+    async def choose_level(params: FunctionCallParams) -> None:
+        try:
+            level = ChooseLevelArgs.model_validate(params.arguments).level
+        except ValidationError:
+            logger.warning("choose_level called with invalid arguments")
+            await params.result_callback(
+                {"error": "level must be 'beginner', 'intermediate', or 'advanced'"}
+            )
+            return
+
+        rate = await apply_level(params, level)
+        await params.result_callback(
+            {
+                "level": level.value,
+                "speed": rate.value,
+                "instruction": (
+                    f"The learner chose the {level.value} level. Follow the rules for that "
+                    "level from now on. Confirm in one short sentence in the learner's native "
+                    "language, then continue."
+                ),
+            }
+        )
 
     async def set_speaking_rate(params: FunctionCallParams) -> None:
         try:
@@ -112,7 +174,8 @@ def coach_tools(
             rate = SpeakingRate.clamped(args.speed)
         except (ValidationError, ValueError):
             logger.warning("set_speaking_rate called with invalid arguments")
-            await params.result_callback({"error": "invalid speed; use a number from 0.7 to 1.3"})
+            limits = f"{SpeakingRate.MIN} to {SpeakingRate.MAX}"
+            await params.result_callback({"error": f"invalid speed; use a number from {limits}"})
             return
 
         await params.llm.push_frame(TTSUpdateSettingsFrame(delta=speed_update(tts, rate)))
@@ -155,6 +218,22 @@ def coach_tools(
             handler=choose_practice_language,
         ),
         FunctionSchema(
+            name="choose_level",
+            description=(
+                "Record the learner's level after they choose it, and when they ask to change "
+                "it. This also resets the speaking speed to the level's default."
+            ),
+            properties={
+                "level": {
+                    "type": "string",
+                    "enum": [level.value for level in PracticeLevel],
+                    "description": "The level the learner wants to practice at.",
+                },
+            },
+            required=["level"],
+            handler=choose_level,
+        ),
+        FunctionSchema(
             name="set_speaking_rate",
             description=(
                 "Adjust the coach's speaking speed when the learner asks to speak slower, "
@@ -165,7 +244,9 @@ def coach_tools(
                     "type": "number",
                     "minimum": SpeakingRate.MIN,
                     "maximum": SpeakingRate.MAX,
-                    "description": "Speaking speed multiplier. Use 1.0 for normal speed.",
+                    "description": (
+                        "Speaking speed multiplier. 1.0 is a native speaker's normal speed."
+                    ),
                 },
                 "reason": {
                     "type": "string",

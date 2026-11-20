@@ -2,8 +2,10 @@
 
 One Mem0 lookup when the learner picks a practice language, and one Mem0 add
 when the session ends. Mem0 extracts the memories from the conversation with
-`EXTRACTION_INSTRUCTIONS`. Pipecat's `Mem0MemoryService` is not used because it
-searches and adds on every turn, which adds latency and per-turn extraction cost.
+`EXTRACTION_INSTRUCTIONS`. The chosen practice level is stored separately as an
+explicit record, so it never depends on what extraction picks up. Pipecat's
+`Mem0MemoryService` is not used because it searches and adds on every turn,
+which adds latency and per-turn extraction cost.
 See https://docs.mem0.ai/platform/quickstart
 """
 
@@ -19,9 +21,10 @@ from mem0.client.types import AddMemoryOptions, DeleteAllMemoryOptions, GetAllMe
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from language_coach.caller import CallerNumber
-from language_coach.practice import PracticeLanguage
+from language_coach.practice import PracticeLanguage, PracticeLevel
 
 RECALL_LIMIT = 30
+LEVEL_KIND = "practice_level"
 _OBJECT_LIST = TypeAdapter(list[object])
 
 EXTRACTION_INSTRUCTIONS = """\
@@ -61,14 +64,34 @@ class LearnerId:
         return f"LearnerId({self})"
 
 
+class RecordMetadata(BaseModel):
+    """Metadata this bot attaches to memories; other keys are ignored.
+
+    Explicit level records have `kind == LEVEL_KIND` and a `level`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    kind: str | None = None
+    level: PracticeLevel | None = None
+
+
 class MemoryRecord(BaseModel):
     """One stored memory from Mem0. Unknown response fields are ignored."""
 
     model_config = ConfigDict(frozen=True, extra="ignore")
 
     memory: str = Field(min_length=1)
+    metadata: RecordMetadata | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    @property
+    def practice_level(self) -> PracticeLevel | None:
+        """The recorded level, if this is an explicit level record."""
+        if self.metadata is None or self.metadata.kind != LEVEL_KIND:
+            return None
+        return self.metadata.level
 
     def for_prompt(self) -> str:
         """Memory text prefixed with the date it was last updated, if known."""
@@ -171,6 +194,10 @@ class LearnerMemoryStore(Protocol):
         """Extract and store memories from a finished conversation."""
         ...
 
+    async def remember_level(self, learner: LearnerId, level: PracticeLevel) -> None:
+        """Store `level` verbatim as the learner's chosen practice level."""
+        ...
+
 
 class Mem0Store:
     """`LearnerMemoryStore` backed by the hosted Mem0 platform."""
@@ -214,6 +241,20 @@ class Mem0Store:
             custom_instructions=EXTRACTION_INSTRUCTIONS,
         )
         messages = [message.model_dump() for message in conversation]
+        # AsyncMemoryClient methods also declare untyped **kwargs.
+        await self._client.add(messages, options)  # pyright: ignore[reportUnknownMemberType]
+
+    async def remember_level(self, learner: LearnerId, level: PracticeLevel) -> None:
+        options = AddMemoryOptions(
+            filters={"user_id": learner.value},
+            metadata={
+                "practice_language": learner.language.value,
+                "kind": LEVEL_KIND,
+                "level": level.value,
+            },
+            infer=False,
+        )
+        messages = [{"role": "user", "content": f"Practice level: {level.value}"}]
         # AsyncMemoryClient methods also declare untyped **kwargs.
         await self._client.add(messages, options)  # pyright: ignore[reportUnknownMemberType]
 
@@ -301,7 +342,32 @@ class SessionMemory:
             return
         logger.info(f"saved {len(conversation)} messages to memory for {learner}")
 
+    async def remember_level(self, language: PracticeLanguage, level: PracticeLevel) -> None:
+        """Record the session's level unless the prefetched memories already have it."""
+        learner = LearnerId.for_caller(self._caller, language)
+        if self._prefetched_level(language) is level:
+            return
+        try:
+            await asyncio.wait_for(
+                self._store.remember_level(learner, level), self._timeout_seconds
+            )
+        except Exception as error:
+            logger.warning(f"level save failed for {learner}: {type(error).__name__}")
+            return
+        logger.info(f"saved level {level} for {learner}")
+
+    def _prefetched_level(self, language: PracticeLanguage) -> PracticeLevel | None:
+        task = self._prefetch
+        if task is None or not task.done() or task.cancelled():
+            return None
+        return remembered_level(task.result()[language])
+
 
 def memories_for_prompt(records: Sequence[MemoryRecord]) -> list[str]:
-    """Memory lines for the LLM, newest first."""
-    return [record.for_prompt() for record in records]
+    """Memory lines for the LLM, newest first, without explicit level records."""
+    return [record.for_prompt() for record in records if record.practice_level is None]
+
+
+def remembered_level(records: Sequence[MemoryRecord]) -> PracticeLevel | None:
+    """The level from the first (newest) explicit level record, if any."""
+    return next((r.practice_level for r in records if r.practice_level is not None), None)

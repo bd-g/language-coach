@@ -24,3 +24,4 @@
 - Learner memory: Mem0 (hosted), a background prefetch at session start and one save after the session ends, kept separate per practice language. The coach says what it remembers and compliments progress. Review and delete with `language_coach.memory_admin`.
 - Alerting: none. Memory and other optional-service failures are logged and otherwise silent.
 - Transcript privacy: the image sets `PCC_WITHHOLD_CONTENT=true`, so Pipecat Cloud does not publish transcripts or tool arguments. This matches the old no-persistence rule.
+- Practice levels: beginner (speed 0.6, Cartesia's slowest, with short sentences and pauses), intermediate (0.8), and advanced (1.0). The coach asks once per practice language. The level is saved to Mem0 as its own record (`kind = practice_level`) without LLM extraction, and later calls apply it without asking.

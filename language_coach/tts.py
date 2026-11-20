@@ -11,14 +11,18 @@ from pipecat.services.settings import TTSSettings
 from pipecat.services.tts_service import TTSService
 
 from language_coach.config import CartesiaTts, DeepgramTts, ElevenLabsTts, TtsConfig
-from language_coach.practice import PracticeLanguage
+from language_coach.practice import PracticeLanguage, PracticeLevel
 
 
 @dataclass(frozen=True, slots=True)
 class SpeakingRate:
-    """Speech-rate multiplier, bounded to what sounds natural for coaching."""
+    """Speech-rate multiplier, bounded to what sounds natural for coaching.
 
-    MIN: ClassVar[float] = 0.7
+    `MIN` is Cartesia's slowest supported speed; providers with a higher floor
+    are limited further in `speed_update`.
+    """
+
+    MIN: ClassVar[float] = 0.6
     MAX: ClassVar[float] = 1.3
 
     value: float
@@ -29,6 +33,17 @@ class SpeakingRate:
         if not math.isfinite(requested):
             raise ValueError("speaking rate must be finite")
         return cls(min(max(requested, cls.MIN), cls.MAX))
+
+    @classmethod
+    def for_level(cls, level: PracticeLevel) -> Self:
+        """Starting rate for a level: beginners get the slowest rate available."""
+        match level:
+            case PracticeLevel.BEGINNER:
+                return cls(cls.MIN)
+            case PracticeLevel.INTERMEDIATE:
+                return cls(0.8)
+            case PracticeLevel.ADVANCED:
+                return cls(1.0)
 
     def within(self, low: float, high: float) -> float:
         """The rate limited to a provider's supported range."""

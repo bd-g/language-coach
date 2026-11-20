@@ -208,10 +208,12 @@ async def _coach(
                 await memory.remember(
                     practice.language, conversation_for_memory(context.get_messages())
                 )
+                if practice.level is not None:
+                    await memory.remember_level(practice.language, practice.level)
         summary = usage.summary()
         logger.info(
             f"session ended after {time.monotonic() - started_at:.0f}s; "
-            f"practice_language={practice.label()} "
+            f"practice_language={practice.label()} level={practice.level_label()} "
             f"tts={bot.tts.provider} tts_characters={summary.tts_characters} "
             f"llm_prompt_tokens={summary.llm_prompt_tokens} "
             f"llm_completion_tokens={summary.llm_completion_tokens}"

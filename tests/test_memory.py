@@ -14,9 +14,11 @@ from language_coach.memory import (
     MemoryRecord,
     SessionMemory,
     conversation_for_memory,
+    memories_for_prompt,
     parse_memory_records,
+    remembered_level,
 )
-from language_coach.practice import PracticeLanguage
+from language_coach.practice import PracticeLanguage, PracticeLevel
 
 CALLER = CallerNumber.parse("+15551234567")
 
@@ -97,6 +99,9 @@ class FakeStore:
     saved: list[tuple[LearnerId, PracticeLanguage, list[ConversationMessage]]] = field(
         default_factory=list[tuple[LearnerId, PracticeLanguage, list[ConversationMessage]]]
     )
+    levels: list[tuple[LearnerId, PracticeLevel]] = field(
+        default_factory=list[tuple[LearnerId, PracticeLevel]]
+    )
     fail: bool = False
     delay: float = 0.0
     recalled: list[LearnerId] = field(default_factory=list[LearnerId])
@@ -118,6 +123,12 @@ class FakeStore:
         if self.fail:
             raise RuntimeError("mem0 down")
         self.saved.append((learner, language, conversation))
+
+    async def remember_level(self, learner: LearnerId, level: PracticeLevel) -> None:
+        await asyncio.sleep(self.delay)
+        if self.fail:
+            raise RuntimeError("mem0 down")
+        self.levels.append((learner, level))
 
 
 CONVERSATION = [
@@ -225,3 +236,90 @@ async def test_remember_failures_are_contained() -> None:
     memory = session_memory(FakeStore(fail=True))
 
     await memory.remember(PracticeLanguage.ENGLISH, CONVERSATION)
+
+
+LEVEL_RESPONSE: dict[str, Any] = {
+    "results": [
+        {
+            "id": "m3",
+            "memory": "Practice level: beginner",
+            "metadata": {
+                "practice_language": "spanish",
+                "kind": "practice_level",
+                "level": "beginner",
+            },
+            "updated_at": "2026-11-01T18:00:00Z",
+        },
+        {
+            "id": "m4",
+            "memory": "Practice level: intermediate",
+            "metadata": {
+                "practice_language": "spanish",
+                "kind": "practice_level",
+                "level": "intermediate",
+            },
+            "updated_at": "2026-11-15T18:00:00Z",
+        },
+        {
+            "id": "m5",
+            "memory": "Ordered tacos at a taquería",
+            "metadata": {"practice_language": "spanish"},
+            "updated_at": "2026-11-10T18:00:00Z",
+        },
+    ]
+}
+
+
+def test_the_newest_explicit_level_record_wins() -> None:
+    assert remembered_level(parse_memory_records(LEVEL_RESPONSE)) is PracticeLevel.INTERMEDIATE
+
+
+def test_extracted_memories_do_not_count_as_a_recorded_level() -> None:
+    records = [MemoryRecord(memory="The learner chose the beginner level")]
+
+    assert remembered_level(records) is None
+
+
+def test_level_records_are_not_shown_to_the_coach_as_memories() -> None:
+    prompt = memories_for_prompt(parse_memory_records(LEVEL_RESPONSE))
+
+    assert prompt == ["2026-11-10: Ordered tacos at a taquería"]
+
+
+async def test_a_new_level_is_recorded_under_the_language_scoped_learner() -> None:
+    store = FakeStore()
+    memory = session_memory(store)
+
+    await memory.remember_level(PracticeLanguage.SPANISH, PracticeLevel.BEGINNER)
+
+    assert store.levels == [
+        (LearnerId.for_caller(CALLER, PracticeLanguage.SPANISH), PracticeLevel.BEGINNER)
+    ]
+
+
+async def test_an_unchanged_level_is_not_recorded_again() -> None:
+    store = FakeStore(records=parse_memory_records(LEVEL_RESPONSE))
+    memory = session_memory(store)
+    memory.prefetch()
+    await memory.recalled(PracticeLanguage.SPANISH)
+
+    await memory.remember_level(PracticeLanguage.SPANISH, PracticeLevel.INTERMEDIATE)
+
+    assert store.levels == []
+
+
+async def test_a_changed_level_is_recorded() -> None:
+    store = FakeStore(records=parse_memory_records(LEVEL_RESPONSE))
+    memory = session_memory(store)
+    memory.prefetch()
+    await memory.recalled(PracticeLanguage.SPANISH)
+
+    await memory.remember_level(PracticeLanguage.SPANISH, PracticeLevel.ADVANCED)
+
+    assert [level for _, level in store.levels] == [PracticeLevel.ADVANCED]
+
+
+async def test_level_save_failures_are_contained() -> None:
+    memory = session_memory(FakeStore(fail=True))
+
+    await memory.remember_level(PracticeLanguage.ENGLISH, PracticeLevel.BEGINNER)

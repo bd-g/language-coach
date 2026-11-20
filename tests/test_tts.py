@@ -4,6 +4,7 @@ from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 
 from language_coach.config import CartesiaTts, DeepgramTts, ElevenLabsTts
+from language_coach.practice import PracticeLevel
 from language_coach.tts import SpeakingRate, build_tts, speed_update
 
 CARTESIA = CartesiaTts(provider="cartesia", model="sonic-3.6", voice="voice-id", language="es-MX")
@@ -12,7 +13,7 @@ ELEVENLABS = ElevenLabsTts(provider="elevenlabs", model="eleven_flash_v2_5", voi
 
 
 @pytest.mark.parametrize(
-    ("requested", "expected"), [(0.85, 0.85), (0.1, 0.7), (5.0, 1.3), (1.0, 1.0)]
+    ("requested", "expected"), [(0.85, 0.85), (0.1, 0.6), (5.0, 1.3), (1.0, 1.0)]
 )
 def test_speaking_rate_clamps_to_app_range(requested: float, expected: float) -> None:
     assert SpeakingRate.clamped(requested).value == pytest.approx(expected)
@@ -57,3 +58,22 @@ def test_build_tts_constructs_the_configured_provider(
     config: CartesiaTts | DeepgramTts | ElevenLabsTts, service_type: type
 ) -> None:
     assert isinstance(build_tts(config, "api-key"), service_type)
+
+
+@pytest.mark.parametrize(
+    ("level", "expected"),
+    [
+        (PracticeLevel.BEGINNER, 0.6),
+        (PracticeLevel.INTERMEDIATE, 0.8),
+        (PracticeLevel.ADVANCED, 1.0),
+    ],
+)
+def test_each_level_starts_at_its_own_rate(level: PracticeLevel, expected: float) -> None:
+    assert SpeakingRate.for_level(level).value == pytest.approx(expected)
+
+
+def test_beginner_rate_is_limited_by_providers_with_a_higher_minimum() -> None:
+    delta = speed_update(DEEPGRAM, SpeakingRate.for_level(PracticeLevel.BEGINNER))
+
+    assert isinstance(delta, DeepgramTTSService.Settings)
+    assert delta.speed == pytest.approx(0.7)
