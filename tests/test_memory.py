@@ -1,9 +1,11 @@
 import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from mem0 import AsyncMemoryClient
+from mem0.client.types import AddMemoryOptions
 
 from language_coach import memory as memory_module
 from language_coach.caller import CallerNumber
@@ -323,3 +325,43 @@ async def test_level_save_failures_are_contained() -> None:
     memory = session_memory(FakeStore(fail=True))
 
     await memory.remember_level(PracticeLanguage.ENGLISH, PracticeLevel.BEGINNER)
+
+
+@dataclass
+class RecordingMem0Client:
+    added: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
+    deleted: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
+
+    async def add(
+        self, messages: Any, options: AddMemoryOptions | None = None, **kwargs: Any
+    ) -> dict[str, Any]:
+        payload = {**(options.model_dump(exclude_unset=True) if options else {}), **kwargs}
+        self.added.append(payload)
+        return {"status": "PENDING"}
+
+    async def delete_all(self, options: Any = None, **kwargs: Any) -> dict[str, str]:
+        self.deleted.append(kwargs)
+        return {"message": "deleted"}
+
+
+# Mem0's v3 add endpoint rejects `filters`-only entity ids with a 400 ("At least one entity
+# ID is required"); `user_id` must be top level: https://docs.mem0.ai/api-reference/memory/add-memories
+async def test_mem0_adds_send_the_user_id_at_the_top_level() -> None:
+    client = RecordingMem0Client()
+    store = Mem0Store(cast(AsyncMemoryClient, client))
+    learner = LearnerId.for_caller(CALLER, PracticeLanguage.SPANISH)
+
+    await store.remember(learner, PracticeLanguage.SPANISH, CONVERSATION)
+    await store.remember_level(learner, PracticeLevel.BEGINNER)
+
+    assert [payload.get("user_id") for payload in client.added] == [learner.value] * 2
+    assert all("filters" not in payload for payload in client.added)
+
+
+async def test_mem0_deletes_send_the_user_id_at_the_top_level() -> None:
+    client = RecordingMem0Client()
+    learner = LearnerId.for_caller(CALLER, PracticeLanguage.SPANISH)
+
+    await Mem0Store(cast(AsyncMemoryClient, client)).delete(learner)
+
+    assert client.deleted == [{"user_id": learner.value}]

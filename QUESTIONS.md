@@ -13,6 +13,8 @@
 
 - **daily-python pin.** `pyproject.toml` pins `daily-python<0.37`. daily-python 0.37 changed `on_dialin_ready` to pass the whole event instead of the SIP URI string, and pipecat-ai 1.16's Daily transport forwards it unchanged to `pinlessCallUpdate`, which fails with `"sipUri" must be a string`. Remove the pin after upgrading to a pipecat-ai release that handles the new payload.
 
+- **Mem0 entity ids.** The mem0ai SDK says to pass `user_id` inside `filters`. But the v3 add endpoint and the delete endpoint both reject that with a 400, so every memory save failed until this was fixed. `Mem0Store` now sends `user_id` at the top level for add and delete. `get_all` still uses `filters`, which works. Check this again when upgrading mem0ai.
+
 ## Resolved
 
 - Language: Pipecat requires Python, so the Rust workspace was replaced. Typing is enforced with pyright strict.

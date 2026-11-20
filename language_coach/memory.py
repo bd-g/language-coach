@@ -17,7 +17,7 @@ from typing import Literal, Protocol, Self
 
 from loguru import logger
 from mem0 import AsyncMemoryClient
-from mem0.client.types import AddMemoryOptions, DeleteAllMemoryOptions, GetAllMemoryOptions
+from mem0.client.types import AddMemoryOptions, GetAllMemoryOptions
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from language_coach.caller import CallerNumber
@@ -236,17 +236,13 @@ class Mem0Store:
         conversation: list[ConversationMessage],
     ) -> None:
         options = AddMemoryOptions(
-            filters={"user_id": learner.value},
             metadata={"practice_language": language.value},
             custom_instructions=EXTRACTION_INSTRUCTIONS,
         )
-        messages = [message.model_dump() for message in conversation]
-        # AsyncMemoryClient methods also declare untyped **kwargs.
-        await self._client.add(messages, options)  # pyright: ignore[reportUnknownMemberType]
+        await self._add(learner, [message.model_dump() for message in conversation], options)
 
     async def remember_level(self, learner: LearnerId, level: PracticeLevel) -> None:
         options = AddMemoryOptions(
-            filters={"user_id": learner.value},
             metadata={
                 "practice_language": learner.language.value,
                 "kind": LEVEL_KIND,
@@ -254,15 +250,26 @@ class Mem0Store:
             },
             infer=False,
         )
-        messages = [{"role": "user", "content": f"Practice level: {level.value}"}]
+        await self._add(
+            learner, [{"role": "user", "content": f"Practice level: {level.value}"}], options
+        )
+
+    async def _add(
+        self, learner: LearnerId, messages: list[dict[str, str]], options: AddMemoryOptions
+    ) -> None:
+        """Add memories for `learner`.
+
+        The SDK says to pass entity ids in `filters`, but the v3 add endpoint rejects
+        that with a 400 and needs a top-level `user_id`.
+        """
         # AsyncMemoryClient methods also declare untyped **kwargs.
-        await self._client.add(messages, options)  # pyright: ignore[reportUnknownMemberType]
+        await self._client.add(messages, options, user_id=learner.value)  # pyright: ignore[reportUnknownMemberType]
 
     async def delete(self, learner: LearnerId) -> None:
         """Delete every memory for `learner`."""
-        options = DeleteAllMemoryOptions(filters={"user_id": learner.value})
+        # Like add, delete_all needs a top-level `user_id`; `filters` is rejected.
         # AsyncMemoryClient methods also declare untyped **kwargs.
-        await self._client.delete_all(options)  # pyright: ignore[reportUnknownMemberType]
+        await self._client.delete_all(user_id=learner.value)  # pyright: ignore[reportUnknownMemberType]
 
 
 class SessionMemory:
