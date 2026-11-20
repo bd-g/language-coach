@@ -2,7 +2,7 @@
 
 A phone-based bilingual conversation coach. Each call starts by asking whether the caller wants to practice English (coached in Mexican Spanish) or Spanish (coached in English). It is built as a [Pipecat](https://docs.pipecat.ai) voice bot and deployed to Pipecat Cloud.
 
-- **Pipeline:** Deepgram Flux speech-to-text (`flux-general-multi`, English and Spanish), then an OpenAI LLM, then a configurable TTS provider (Cartesia, Deepgram Aura-2, or ElevenLabs).
+- **Pipeline:** Deepgram Flux speech-to-text (`flux-general-multi`, English and Spanish), then an OpenAI LLM, then a configurable TTS provider (Deepgram Flux TTS or Cartesia).
 - **Phone:** a Daily number through Pipecat Cloud's managed dial-in. Only allowlisted callers get a coaching session.
 - **Memory:** for phone callers, the coach remembers phrases it taught, recurring mistakes and progress from earlier calls (stored in Mem0, separately per practice language). It refers back to them and compliments improvement over time.
 - **Tools:** the coach records the chosen practice language (which also sets the voice's locale), changes its speaking speed, and ends the call. Sessions are limited to 30 minutes.

@@ -5,12 +5,11 @@ from dataclasses import dataclass
 from typing import ClassVar, Self
 
 from pipecat.services.cartesia.tts import CartesiaTTSService, GenerationConfig
-from pipecat.services.deepgram.tts import DeepgramTTSService
-from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
+from pipecat.services.deepgram.flux.tts import DeepgramFluxTTSService
 from pipecat.services.settings import TTSSettings
 from pipecat.services.tts_service import TTSService
 
-from language_coach.config import CartesiaTts, DeepgramTts, ElevenLabsTts, TtsConfig
+from language_coach.config import CartesiaTts, DeepgramTts, TtsConfig
 from language_coach.practice import PracticeLanguage, PracticeLevel
 
 
@@ -18,11 +17,11 @@ from language_coach.practice import PracticeLanguage, PracticeLevel
 class SpeakingRate:
     """Speech-rate multiplier, bounded to what sounds natural for coaching.
 
-    `MIN` is Cartesia's slowest supported speed; providers with a higher floor
-    are limited further in `speed_update`.
+    `MIN` is Deepgram Flux's slowest speed; Cartesia's higher floor is applied
+    in `speed_update`.
     """
 
-    MIN: ClassVar[float] = 0.6
+    MIN: ClassVar[float] = 0.5
     MAX: ClassVar[float] = 1.3
 
     value: float
@@ -61,14 +60,10 @@ def build_tts(config: TtsConfig, api_key: str) -> TTSService:
                 ),
             )
         case DeepgramTts():
-            return DeepgramTTSService(
-                api_key=api_key, settings=DeepgramTTSService.Settings(voice=config.voice)
-            )
-        case ElevenLabsTts():
-            return ElevenLabsTTSService(
+            return DeepgramFluxTTSService(
                 api_key=api_key,
-                settings=ElevenLabsTTSService.Settings(
-                    model=config.model, voice=config.voice, language=config.language
+                settings=DeepgramFluxTTSService.Settings(
+                    voice=config.voice, expressivity=config.expressivity
                 ),
             )
 
@@ -77,16 +72,13 @@ def practice_language_update(config: TtsConfig, language: PracticeLanguage) -> T
     """Settings delta so role-play in the practice language gets its native accent.
 
     Cartesia speaks one locale per request, so the locale follows the practice
-    language (American English or Mexican Spanish). Aura-2 voice models are
-    fixed per language and code-switch on their own, so they are left alone.
+    language (American English or Mexican Spanish). Deepgram Flux voices are
+    fixed per language and speak both languages on their own, so they are left alone.
     """
     match config:
         case CartesiaTts():
             locale = {PracticeLanguage.ENGLISH: "en-US", PracticeLanguage.SPANISH: "es-MX"}
             return CartesiaTTSService.Settings(language=locale[language])
-        case ElevenLabsTts():
-            code = {PracticeLanguage.ENGLISH: "en", PracticeLanguage.SPANISH: "es"}
-            return ElevenLabsTTSService.Settings(language=code[language])
         case DeepgramTts():
             return None
 
@@ -94,7 +86,8 @@ def practice_language_update(config: TtsConfig, language: PracticeLanguage) -> T
 def speed_update(config: TtsConfig, rate: SpeakingRate) -> TTSSettings:
     """Settings delta that applies `rate` to the configured provider.
 
-    Provider ranges: Cartesia 0.6-1.5, Aura-2 0.7-1.5, ElevenLabs 0.7-1.2.
+    Provider ranges: Cartesia 0.6-1.5; Deepgram Flux 0.5-1.5 in steps of 0.05,
+    applied to the open connection without reconnecting.
     """
     match config:
         case CartesiaTts():
@@ -102,6 +95,5 @@ def speed_update(config: TtsConfig, rate: SpeakingRate) -> TTSSettings:
                 generation_config=GenerationConfig(speed=rate.within(0.6, 1.5))
             )
         case DeepgramTts():
-            return DeepgramTTSService.Settings(speed=rate.within(0.7, 1.5))
-        case ElevenLabsTts():
-            return ElevenLabsTTSService.Settings(speed=rate.within(0.7, 1.2))
+            steps = round(rate.within(0.5, 1.5) / 0.05)
+            return DeepgramFluxTTSService.Settings(speed=round(steps * 0.05, 2))

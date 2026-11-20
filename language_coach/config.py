@@ -81,26 +81,21 @@ class CartesiaTts(_Strict):
 
 
 class DeepgramTts(_Strict):
-    """Deepgram Aura voice. Aura-2 Spanish voices code-switch with English."""
+    """Deepgram Flux TTS voice on `/v2/speak`, named `flux-{voice}-{language}`.
+
+    Flux Spanish voices such as `flux-ernesto-es` also speak English. `expressivity`
+    runs from -2 (calm) to 2 (animated) and is fixed per connection.
+    See https://developers.deepgram.com/docs/flux-tts/feature-overview
+    """
 
     api_key_env: ClassVar[str] = "DEEPGRAM_API_KEY"
 
     provider: Literal["deepgram"]
-    voice: str = Field(min_length=1)
+    voice: str = Field(pattern=r"^flux-[a-z]+-[a-z]+$")
+    expressivity: Literal[-2, -1, 0, 1, 2]
 
 
-class ElevenLabsTts(_Strict):
-    """ElevenLabs voice. `language` is optional; multilingual models detect it from text."""
-
-    api_key_env: ClassVar[str] = "ELEVENLABS_API_KEY"
-
-    provider: Literal["elevenlabs"]
-    model: str = Field(min_length=1)
-    voice: str = Field(min_length=1)
-    language: str | None = None
-
-
-type TtsConfig = CartesiaTts | DeepgramTts | ElevenLabsTts
+type TtsConfig = CartesiaTts | DeepgramTts
 
 
 class BotConfig(_Strict):
@@ -110,7 +105,7 @@ class BotConfig(_Strict):
     memory: MemoryConfig
     stt: SttConfig
     llm: LlmConfig
-    tts: Annotated[CartesiaTts | DeepgramTts | ElevenLabsTts, Field(discriminator="provider")]
+    tts: Annotated[CartesiaTts | DeepgramTts, Field(discriminator="provider")]
 
 
 @dataclass(frozen=True, slots=True)

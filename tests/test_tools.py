@@ -31,7 +31,11 @@ def test_unknown_end_call_reason_is_rejected() -> None:
 def test_coach_tools_expose_constrained_schemas() -> None:
     tools = {
         tool.name: tool
-        for tool in coach_tools(DeepgramTts(provider="deepgram", voice="v"), PracticeChoice(), None)
+        for tool in coach_tools(
+            DeepgramTts(provider="deepgram", voice="flux-ernesto-es", expressivity=0),
+            PracticeChoice(),
+            None,
+        )
     }
 
     assert set(tools) == {
@@ -41,6 +45,6 @@ def test_coach_tools_expose_constrained_schemas() -> None:
         "end_call",
     }
     speed = tools["set_speaking_rate"].properties["speed"]
-    assert (speed["minimum"], speed["maximum"]) == (0.6, 1.3)
+    assert (speed["minimum"], speed["maximum"]) == (0.5, 1.3)
     assert tools["end_call"].properties["reason"]["enum"] == [r.value for r in EndCallReason]
     assert all(tool.handler is not None for tool in tools.values())

@@ -4,19 +4,17 @@ from typing import Any, cast
 import pytest
 from pipecat.frames.frames import Frame, TTSUpdateSettingsFrame
 from pipecat.services.cartesia.tts import CartesiaTTSService
-from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.llm_service import FunctionCallParams
 
 from language_coach.caller import CallerNumber
-from language_coach.config import CartesiaTts, DeepgramTts, ElevenLabsTts
+from language_coach.config import CartesiaTts, DeepgramTts
 from language_coach.memory import LearnerId, MemoryRecord, RecordMetadata, SessionMemory
 from language_coach.practice import PracticeChoice, PracticeLanguage, PracticeLevel
 from language_coach.tools import coach_tools
 from language_coach.tts import practice_language_update
 
 CARTESIA = CartesiaTts(provider="cartesia", model="sonic-3.6", voice="v", language="es-MX")
-DEEPGRAM = DeepgramTts(provider="deepgram", voice="aura-2-selena-es")
-ELEVENLABS = ElevenLabsTts(provider="elevenlabs", model="eleven_flash_v2_5", voice="v")
+DEEPGRAM = DeepgramTts(provider="deepgram", voice="flux-ernesto-es", expressivity=0)
 
 
 @pytest.mark.parametrize(
@@ -30,13 +28,6 @@ def test_cartesia_speaks_with_the_practice_language_locale(
 
     assert isinstance(delta, CartesiaTTSService.Settings)
     assert delta.language == locale
-
-
-def test_elevenlabs_uses_base_language_codes() -> None:
-    delta = practice_language_update(ELEVENLABS, PracticeLanguage.SPANISH)
-
-    assert isinstance(delta, ElevenLabsTTSService.Settings)
-    assert delta.language == "es"
 
 
 def test_deepgram_voice_is_left_unchanged() -> None:
@@ -166,7 +157,7 @@ async def call_level(arguments: dict[str, Any], choice: PracticeChoice) -> FakeP
 @pytest.mark.parametrize(
     ("level", "speed"),
     [
-        (PracticeLevel.BEGINNER, 0.6),
+        (PracticeLevel.BEGINNER, 0.6),  # Cartesia's minimum
         (PracticeLevel.INTERMEDIATE, 0.8),
         (PracticeLevel.ADVANCED, 1.0),
     ],

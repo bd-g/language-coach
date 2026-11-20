@@ -7,7 +7,6 @@ from language_coach.config import (
     CartesiaTts,
     ConfigError,
     DeepgramTts,
-    ElevenLabsTts,
     Runtime,
     load_app_config,
 )
@@ -55,7 +54,7 @@ def write_config(tmp_path: Path, tts: str = CARTESIA, memory_enabled: bool = Tru
 def test_committed_config_loads() -> None:
     config = load_app_config(ENV, DEFAULT_CONFIG_PATH)
 
-    assert isinstance(config.bot.tts, CartesiaTts)
+    assert isinstance(config.bot.tts, DeepgramTts)
     assert config.bot.session.max_duration_seconds == 1800
     assert config.system_prompt.startswith("You are a warm, patient")
     assert config.greeting.startswith("Hola")
@@ -75,26 +74,33 @@ def test_runtime_is_passed_through(tmp_path: Path) -> None:
     assert config.runtime is Runtime.LOCAL
 
 
+DEEPGRAM_FLUX = 'provider = "deepgram"\nvoice = "flux-ernesto-es"\nexpressivity = 0'
+
+
 @pytest.mark.parametrize(
     ("tts", "key_name", "expected_type"),
-    [
-        ('provider = "deepgram"\nvoice = "aura-2-selena-es"', "DEEPGRAM_API_KEY", DeepgramTts),
-        (
-            'provider = "elevenlabs"\nmodel = "eleven_flash_v2_5"\nvoice = "voice-id"',
-            "ELEVENLABS_API_KEY",
-            ElevenLabsTts,
-        ),
-    ],
+    [(CARTESIA, "CARTESIA_API_KEY", CartesiaTts), (DEEPGRAM_FLUX, "DEEPGRAM_API_KEY", DeepgramTts)],
 )
 def test_tts_provider_selects_its_api_key(
     tmp_path: Path, tts: str, key_name: str, expected_type: type
 ) -> None:
-    env = {**ENV, "ELEVENLABS_API_KEY": "eleven-key"}
-
-    config = load_app_config(env, write_config(tmp_path, tts))
+    config = load_app_config(ENV, write_config(tmp_path, tts))
 
     assert isinstance(config.bot.tts, expected_type)
-    assert config.secrets.tts_api_key.get_secret_value() == env[key_name]
+    assert config.secrets.tts_api_key.get_secret_value() == ENV[key_name]
+
+
+@pytest.mark.parametrize(
+    "tts",
+    [
+        'provider = "deepgram"\nvoice = "aura-2-selena-es"',
+        'provider = "deepgram"\nvoice = "flux-ernesto-es"\nexpressivity = 3',
+        'provider = "elevenlabs"\nmodel = "eleven_flash_v2_5"\nvoice = "voice-id"',
+    ],
+)
+def test_unsupported_tts_settings_are_rejected(tmp_path: Path, tts: str) -> None:
+    with pytest.raises(ConfigError, match="tts"):
+        load_app_config(ENV, write_config(tmp_path, tts))
 
 
 def test_missing_secrets_are_listed_by_name_only(tmp_path: Path) -> None:
